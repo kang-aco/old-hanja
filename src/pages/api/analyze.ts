@@ -27,6 +27,17 @@ export const prerender = false;
 const DEFAULT_DAILY_CAP = 50;
 const MAX_INPUT_CHARS = 200;
 
+/**
+ * 한 번에 분석할 수 있는 한자 수 상한.
+ *
+ * 분석 시간은 한자 수에 거의 선형으로 늘어난다 (실측: 62자→34초, 136자→59초,
+ * 한자당 약 0.43초). 이 응답은 스트림을 서버에서 모아 한 번에 돌려주므로,
+ * 생성이 끝날 때까지 첫 바이트가 나가지 않는다. Cloudflare 엣지는 약 100초에
+ * 연결을 끊으므로, 여유를 둬서 예상 75초(≈한자 150자) 선에서 막는다.
+ * 이 상한을 넘으면 엣지 타임아웃으로 아무 안내 없이 끊기는 대신 명확히 거절한다.
+ */
+const MAX_HANJA = 150;
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -62,6 +73,20 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
   if (!hasHanja(text)) {
     return json({ ok: false, error: '한자가 포함된 구절을 입력해 주세요. 예: 學而時習之' }, 400);
+  }
+
+  const hanjaCount = extractHanja(text).length;
+  if (hanjaCount > MAX_HANJA) {
+    return json(
+      {
+        ok: false,
+        code: 'too_many_hanja',
+        error:
+          `한자가 ${hanjaCount}자입니다. 한 번에 ${MAX_HANJA}자까지 분석할 수 있습니다. ` +
+          '문장 단위로 나눠 입력해 주세요. 나눠서 분석하면 어순 풀이도 더 정확합니다.',
+      },
+      400,
+    );
   }
 
   const textHash = await sha256(text);
@@ -140,8 +165,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
   //  - sonnet-5: adaptive thinking 이 기본 ON 이라 명시적으로 끈다. 켜면 출력 토큰이 약 2배가 된다.
   //    구조화된 추출 작업이라 사고를 끄더라도 Haiku 대비 정확도 이득은 그대로 남는다.
   const isDeep = mode === 'deep';
-  // 출력 예산은 한자 수에 비례해서 잡는다. 고정값이면 긴 구절이 중간에 잘린다.
-  const hanjaCount = extractHanja(text).length;
+  // 출력 예산은 한자 수에 비례해서 잡는다 (hanjaCount 는 위에서 계산). 고정값이면 긴 구절이 잘린다.
   const params: Record<string, unknown> = {
     model,
     max_tokens: maxTokensFor(mode, hanjaCount),
@@ -153,8 +177,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   let message: Anthropic.Message;
   try {
+    // 반드시 스트리밍으로 호출한다.
+    // max_tokens 가 커지면 SDK 가 비스트리밍 요청을 거부한다
+    // ("Streaming is required for operations that may take longer than 10 minutes").
+    // 여기서는 스트림을 서버에서 모아 한 번에 JSON 으로 반환하므로 클라이언트 코드는 그대로다.
     // output_config 는 SDK 버전에 따라 타입 정의가 없을 수 있어 캐스팅한다.
-    message = (await client.messages.create(params as never)) as Anthropic.Message;
+    const stream = client.messages.stream(params as never);
+    message = (await stream.finalMessage()) as Anthropic.Message;
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     const status = err instanceof Anthropic.APIError ? err.status : undefined;

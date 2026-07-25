@@ -172,10 +172,14 @@ const EXAMPLES = [
     const hanja = [...input.value].filter((c) => HANJA_RE.test(c)).length;
     let text = `${len} / 200자`;
     if (hanja > 0) {
-      text += ` · 한자 ${hanja}자 · 예상 약 ${predictKrw(hanja)}원`;
-      if (hanja > 45) text += ' · 문장 단위로 나누면 더 정확합니다';
+      // 실측: 한자당 약 0.43초 + 기본 7초
+      const sec = Math.round(hanja * 0.43 + 7);
+      text += ` · 한자 ${hanja}자 · 예상 약 ${predictKrw(hanja)}원 · ${sec}초`;
+      if (hanja > 150) text += ' · 150자를 넘어 분석할 수 없습니다';
+      else if (hanja > 45) text += ' · 문장 단위로 나누면 더 정확합니다';
     }
     $('count').textContent = text;
+    go.disabled = busy || hanja > 150;
   }
   input.addEventListener('input', syncCount);
   deep.addEventListener('change', syncCount);
