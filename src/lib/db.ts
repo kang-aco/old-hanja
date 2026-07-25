@@ -54,11 +54,13 @@ export async function logSearch(
 }
 
 export async function recentSearches(db: D1Database, limit = 5) {
+  // text_hash 가 아니라 원문으로 묶는다. 캐시 키에 mode 가 들어가므로 같은 구절을
+  // light/deep 으로 각각 분석하면 해시가 둘이 되어 목록에 중복으로 나온다.
   const { results } = await db
     .prepare(
-      `SELECT original_text, text_hash, MAX(created_at) AS created_at
+      `SELECT original_text, MIN(text_hash) AS text_hash, MAX(created_at) AS created_at
          FROM search_logs
-        GROUP BY text_hash
+        GROUP BY original_text
         ORDER BY created_at DESC
         LIMIT ?`,
     )
