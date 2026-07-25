@@ -1,4 +1,6 @@
-name = "hanmun-app"
+# Cloudflare Pages 프로젝트 이름과 반드시 일치해야 합니다.
+# 다르면 `wrangler pages deploy` 가 같은 이름의 프로젝트를 새로 만들어 버립니다.
+name = "old-hanja"
 compatibility_date = "2026-07-25"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "./dist"
@@ -20,6 +22,6 @@ database_id = "02c11e8d-d5e4-4cc8-9082-c83a5d05f1fc"
 
 # ── 시크릿 ────────────────────────────────────────────────────────────────
 # 로컬:   .env 에 ANTHROPIC_API_KEY=... (wrangler 4 는 .env 를 읽습니다)
-# 배포:   npx wrangler pages secret put ANTHROPIC_API_KEY --project-name hanmun-app
-#         또는 Pages 대시보드 → Settings → Environment variables → Secret
+# 배포:   Pages 대시보드 → old-hanja → Settings → Environment variables →
+#         Production 에 ANTHROPIC_API_KEY 를 "Secret" 타입으로 추가 후 재배포
 # ※ .env 는 .gitignore 로 제외되어 있습니다. 절대 커밋하지 마십시오.

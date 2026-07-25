@@ -100,8 +100,15 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   if (!env.ANTHROPIC_API_KEY) {
     return json(
-      { ok: false, error: 'ANTHROPIC_API_KEY 가 설정되지 않았습니다. .dev.vars 를 확인해 주세요.' },
-      500,
+      {
+        ok: false,
+        code: 'no_api_key',
+        error:
+          'ANTHROPIC_API_KEY 가 설정되지 않아 새 구절을 분석할 수 없습니다. ' +
+          '이미 분석한 구절과 부수 사전은 그대로 이용할 수 있습니다. ' +
+          '(로컬: .env / 배포: Pages → Settings → Environment variables 에 Secret 으로 추가)',
+      },
+      503,
     );
   }
 

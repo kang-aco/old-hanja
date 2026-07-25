@@ -103,26 +103,39 @@ npm run dev                   # http://localhost:4321
 
 ## 5. 배포 (Cloudflare Pages)
 
+현재 배포 상태: **https://old-hanja.pages.dev** — GitHub `main` 브랜치 푸시 시 자동 배포.
+
+| Pages 설정 | 값 |
+|---|---|
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| Production branch | `main` |
+| `NODE_VERSION` (환경변수) | `22` — Astro 5 는 Node 18.20.8+ / 20.3+ / 22+ 필요 |
+
+D1 바인딩은 이 저장소의 `wrangler.toml` 이 소스입니다. 대시보드에서 따로 설정하지 않아도
+`binding = "DB"` 가 적용됩니다 (배포 후 `/api/radicals` 가 214를 반환하면 정상).
+
+### API 키 (필수 · 대시보드에서만)
+
+Pages 대시보드 → **old-hanja** → Settings → Environment variables → Production →
+`ANTHROPIC_API_KEY` 를 **Secret** 타입으로 추가한 뒤 재배포하세요.
+
+> `npx wrangler pages secret put` 은 이 프로젝트에서 `Project "old-hanja" does not exist` 로
+> 실패합니다(토큰에 `pages (write)` 권한이 있어도 발생). 대시보드를 사용하세요.
+
+키가 없어도 **부수 사전 · 한자 조회 · 번역 7단계 · 이미 분석한 구절**은 정상 동작하고,
+새 구절 분석만 503 으로 막힙니다.
+
+### 새 Cloudflare 계정에서 처음부터 세팅할 때
+
 ```bash
-# 1) 원격 D1 생성 → 출력된 database_id 를 wrangler.toml 에 붙여넣기
-npm run db:create
-
-# 2) 원격 D1 에 스키마 + 시드
-npm run db:migrate
-npm run db:seed
-
-# 3) 배포
-npm run deploy            # astro build && wrangler pages deploy ./dist
+npm run db:create         # 출력된 database_id 를 wrangler.toml 에 붙여넣기
+npm run db:migrate        # 원격 D1 에 스키마
+npm run db:seed           # 원격 D1 에 시드
 ```
 
-배포 후 **API 키를 시크릿으로 등록**하세요 (코드·저장소에 넣지 말 것):
-
-```bash
-npx wrangler pages secret put ANTHROPIC_API_KEY
-```
-
-또는 Cloudflare 대시보드 → Pages 프로젝트 → Settings → Environment variables → **Secret** 로 추가.
-D1 바인딩(`DB`)도 같은 화면의 **Bindings** 에서 연결해야 합니다.
+`wrangler.toml` 의 `name` 은 **Pages 프로젝트 이름과 반드시 같아야** 합니다.
+다르면 `npm run deploy` 가 그 이름으로 프로젝트를 새로 만들어 버립니다.
 
 R2 를 쓸 때(폰트 호스팅 · PDF 내보내기)는 버킷을 만든 뒤 `wrangler.toml` 의 `[[r2_buckets]]`
 주석을 해제하세요:
