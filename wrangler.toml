@@ -4,11 +4,13 @@ compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "./dist"
 
 # ── D1: 고사성어 / 부수 / 한자 / 검색기록 / 분석 캐시 ───────────────────────
-# 최초 1회:  npm run db:create   →  출력된 database_id 를 아래에 붙여넣기
+# 새 Cloudflare 계정에서 처음 세팅할 때:
+#   npm run db:create  →  출력된 database_id 를 아래에 붙여넣기
+#   npm run db:migrate && npm run db:seed   (원격 D1 에 스키마·시드 주입)
 [[d1_databases]]
 binding = "DB"
 database_name = "hanmun-db"
-database_id = "REPLACE_ME_AFTER_npm_run_db_create"
+database_id = "02c11e8d-d5e4-4cc8-9082-c83a5d05f1fc"
 
 # ── R2: 폰트 / 정적 에셋 / PDF 내보내기 (Phase 4~5) ────────────────────────
 # 버킷을 먼저 만든 뒤 주석을 해제하세요:  wrangler r2 bucket create hanmun-assets
@@ -17,6 +19,7 @@ database_id = "REPLACE_ME_AFTER_npm_run_db_create"
 # bucket_name = "hanmun-assets"
 
 # ── 시크릿 ────────────────────────────────────────────────────────────────
-# 로컬:   .dev.vars 에 ANTHROPIC_API_KEY=sk-ant-...
-# 배포:   Cloudflare Pages 대시보드 → Settings → Environment variables (Secret)
-#         또는  wrangler pages secret put ANTHROPIC_API_KEY
+# 로컬:   .env 에 ANTHROPIC_API_KEY=... (wrangler 4 는 .env 를 읽습니다)
+# 배포:   npx wrangler pages secret put ANTHROPIC_API_KEY --project-name hanmun-app
+#         또는 Pages 대시보드 → Settings → Environment variables → Secret
+# ※ .env 는 .gitignore 로 제외되어 있습니다. 절대 커밋하지 마십시오.

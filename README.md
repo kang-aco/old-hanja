@@ -16,11 +16,8 @@
 ```bash
 npm install
 
-# 1) API 키 설정 — .env 와 .dev.vars 둘 다 필요합니다
-#    .env      : Astro 빌드 타임
-#    .dev.vars : wrangler/miniflare 런타임 (실제로 API 호출에 쓰이는 쪽)
+# 1) API 키 설정 — .env 하나면 됩니다 (wrangler 4 가 .env 를 읽습니다)
 cp .env.example .env          # 그리고 키를 채워 넣으세요
-cp .env .dev.vars
 
 # 2) 로컬 D1 생성 + 시드 주입
 npm run db:reset:local
