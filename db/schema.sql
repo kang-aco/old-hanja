@@ -66,14 +66,18 @@ CREATE INDEX idx_radicals_strokes ON radicals (stroke_count);
 -- ─────────────────────────────────────────────────────────────────────────
 -- 5. 한자 (음→한자 변환, 한자 팝업, 같은 부수 묶기)
 -- ─────────────────────────────────────────────────────────────────────────
+-- Unihan(유니코드 공식 데이터)에서 생성한 8,500여 자.
+-- hun(한국어 훈)은 Unihan 에 없어서 큐레이션한 182자에만 채워져 있고, 나머지는 NULL 이다.
+-- 팝업에서는 hun 이 없으면 분석 결과의 훈이나 definition(영문 뜻)으로 대체한다.
 CREATE TABLE characters (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   hanja        TEXT NOT NULL UNIQUE,
-  eum          TEXT NOT NULL,         -- 음 (예: 학)
-  hun          TEXT NOT NULL,         -- 훈 (예: 배울)
+  eum          TEXT NOT NULL,         -- 음. 여러 독음은 쉼표 구분 (예: 구,귀,균)
+  hun          TEXT,                  -- 훈 (예: 배울). 큐레이션분만 존재
   radical      TEXT,                  -- radicals.radical 참조
   stroke_count INTEGER,
-  note         TEXT                   -- 자원(字源) / 암기 메모
+  note         TEXT,                  -- 자원(字源) / 암기 메모
+  definition   TEXT                   -- Unihan 영문 뜻 (훈이 없을 때 보조)
 );
 CREATE INDEX idx_characters_eum     ON characters (eum);
 CREATE INDEX idx_characters_radical ON characters (radical);

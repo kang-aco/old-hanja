@@ -25,18 +25,17 @@ import {
 export const prerender = false;
 
 const DEFAULT_DAILY_CAP = 50;
-const MAX_INPUT_CHARS = 200;
+const MAX_INPUT_CHARS = 300;
 
 /**
  * 한 번에 분석할 수 있는 한자 수 상한.
  *
- * 분석 시간은 한자 수에 거의 선형으로 늘어난다 (실측: 62자→34초, 136자→59초,
- * 한자당 약 0.43초). 이 응답은 스트림을 서버에서 모아 한 번에 돌려주므로,
- * 생성이 끝날 때까지 첫 바이트가 나가지 않는다. Cloudflare 엣지는 약 100초에
- * 연결을 끊으므로, 여유를 둬서 예상 75초(≈한자 150자) 선에서 막는다.
- * 이 상한을 넘으면 엣지 타임아웃으로 아무 안내 없이 끊기는 대신 명확히 거절한다.
+ * 글자별 분해를 없앤 뒤 출력이 약 1/3 로 줄어 지연이 길이와 거의 무관해졌다
+ * (실측: 9자→23초, 62자→19초, 136자→23초). 그래서 예전 150자에서 300자로 올렸다.
+ * 300자면 출력 약 5,200토큰 · 40초 내외로 예상되며, 응답을 서버에서 모아 반환하므로
+ * Cloudflare 엣지의 약 100초 제한에도 충분한 여유가 있다.
  */
-const MAX_HANJA = 150;
+const MAX_HANJA = 300;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {

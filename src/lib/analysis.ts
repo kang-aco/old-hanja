@@ -32,24 +32,24 @@ export const PRICING: Record<string, { input: number; output: number }> = {
 /**
  * 출력 예산 — 입력 길이에 비례해서 잡는다.
  *
- * word_breakdown 이 한자 한 글자당 항목 1개를 만들기 때문에 출력량은 한자 수에 선형으로 늘어난다.
- * 실측(한자 5자→1533, 8자→1713, 12자→2008 토큰)에서 얻은 근사식:
- *     필요 출력 ≈ 1200 + 75 × 한자수     (오차 5% 이내, 항상 약간 여유 있게 예측)
- * 여기에 약 47% 여유를 둔다. 캡 24000 은 입력 상한(200자)에서도 걸리지 않는 값이라
- * 사실상 폭주 방지용 안전장치로만 동작한다 (한자 200자 → 예산 23800, 필요 16200).
+ * 글자별 분해(word_breakdown)를 없앤 뒤로는 어순 재구성과 번역문만 길이에 비례한다.
+ * 실측(한자 9자→784, 62자→1616, 136자→2401 토큰)에서 얻은 근사식:
+ *     필요 출력 ≈ 700 + 15 × 한자수  (UI 예상치는 약간 넉넉하게 잡는다)
+ * 여기에 약 60% 여유를 둔다. 캡 12000 은 입력 상한에서도 걸리지 않는 안전장치다.
  *
- * 고정값(예: 4000)을 쓰면 한자 40자가 넘는 구절이 응답 중간에 잘린다.
+ * 참고: 글자별 분해가 있던 시절은 75 × 한자수 였다. 그것이 비용·지연·입력상한의
+ * 주된 원인이었고, 제거 후 출력이 약 1/5 로 줄었다.
  */
 export function maxTokensFor(mode: Mode, hanjaCount: number): number {
-  const base = mode === 'deep' ? 2400 : 1800;
-  return Math.min(24000, Math.round(base + hanjaCount * 110));
+  const base = mode === 'deep' ? 1400 : 1000;
+  return Math.min(12000, Math.round(base + hanjaCount * 22));
 }
 
 /** UI 에 표시할 예상 비용(USD). 실제 과금은 응답의 usage 로 다시 계산한다. */
 export function predictCostUsd(mode: Mode, hanjaCount: number): number {
   const model = mode === 'deep' ? MODEL_DEEP : MODEL_LIGHT;
-  const inputTokens = 2650; // 시스템 프롬프트 + 스키마 고정 오버헤드
-  const outputTokens = 1200 + 75 * hanjaCount;
+  const inputTokens = 1750; // 시스템 프롬프트 + 스키마 고정 오버헤드
+  const outputTokens = 700 + 15 * hanjaCount;
   return estimateCostUsd(model, inputTokens, outputTokens);
 }
 
@@ -64,16 +64,6 @@ export function estimateCostUsd(model: string, inputTokens: number, outputTokens
 }
 
 // ── 타입 ────────────────────────────────────────────────────────────────────
-
-export interface WordUnit {
-  hanja: string;
-  eum: string;
-  hun: string;
-  /** 문법적 역할 (주어 / 서술어 / 목적어 / 접속사 / 종결사 …) */
-  role: string;
-  /** 이 구절에서의 실제 의미 */
-  gloss: string;
-}
 
 export interface Technique {
   technique: string;
@@ -97,24 +87,6 @@ export interface RelatedPassage {
   context: string;
 }
 
-export interface SameRadicalChar {
-  hanja: string;
-  eum: string;
-  meaning: string;
-  memory_tip: string;
-}
-
-export interface RadicalCard {
-  hanja: string;
-  radical: string;
-  radical_name: string;
-  radical_meaning: string;
-  radical_strokes: number;
-  same_radical_chars: SameRadicalChar[];
-  etymology_note: string;
-  visual_mnemonic: string;
-}
-
 export interface Analysis {
   original: string;
   eum: string;
@@ -124,15 +96,12 @@ export interface Analysis {
     confidence: 'high' | 'medium' | 'low' | 'unknown';
     note: string;
   };
-  word_breakdown: WordUnit[];
   word_order_reconstruction: string;
   modern_korean: string;
-  literal_english: string;
   english_translation: string;
   methodology: Technique[];
   related_idioms: RelatedIdiom[];
   related_passages: RelatedPassage[];
-  radical_memorization: RadicalCard[];
 }
 
 export interface AnalyzeMeta {
@@ -152,20 +121,19 @@ export const SYSTEM_PROMPT = `당신은 한문 고전 번역 전문가입니다.
 [각 필드]
 - eum: 원문 전체의 한글 독음. 예) 학이시습지 불역열호
 - source_guess: 확실할 때만 book/chapter 를 채웁니다. 모르면 confidence="unknown", book="미상", chapter="". note 는 이체자·판본 메모(없으면 "").
-- word_breakdown: 원문 순서대로 한 글자씩 빠짐없이(구두점 제외). 허사(之 而 於 以 者 所 則 乎 也 矣 焉)의 role 에 문법 기능을 정확히 밝히십시오. 한문 독해의 핵심입니다.
-- word_order_reconstruction: 한국어 어순으로 재배열하되 한자를 괄호와 함께 남겨 어느 글자가 어디로 갔는지 보이게 씁니다. 빈 괄호를 남기지 마십시오.
+- word_order_reconstruction: 이 분석의 핵심입니다. 한국어 어순으로 재배열하되 한자를 괄호와 함께 남겨 어느 글자가 어디로 갔는지 보이게 씁니다. 허사(之 而 於 以 者 所 則 乎 也 矣 焉)의 기능을 괄호 안에 드러내십시오. 빈 괄호를 남기지 마십시오.
   예) [學(배운 것)을 時(때때로) 習(익히)而(고)] 不亦(어찌 ~않으랴) 說(기쁘)乎(겠는가)
+  구절이 길면 문장 단위로 줄을 나눕니다.
 - methodology: 이 구절에 실제로 적용된 기법만 정확히 2개. 일반론 나열 금지. example 은 구절 안의 짧은 예.
 - related_idioms 2개, related_passages 2개. connection/context 에 왜 연관되는지 밝힙니다.
-- radical_memorization: 학습 가치가 높은 한자 2자. same_radical_chars 는 정확히 3개.
 
 [금지]
 - 원문의 글자를 고치지 마십시오.
 - 없는 출전·없는 명구를 지어내지 마십시오. 확실하지 않으면 널리 알려진 것만 쓰십시오.
 
 [분량 — 반드시 지킬 것]
-- 설명 필드(explanation, connection, context, etymology_note, visual_mnemonic, memory_tip, note)는 한 문장, 45자 이내.
-- gloss, meaning, hun, role 은 단어나 짧은 구.
+- 설명 필드(explanation, connection, context, note)는 한 문장, 45자 이내.
+- meaning 은 단어나 짧은 구.
 - 같은 내용을 여러 필드에서 되풀이하지 마십시오.
 - 지정된 개수를 초과하지 마십시오. 많이 쓰는 것보다 정확한 것이 좋은 답입니다.
 
@@ -199,34 +167,12 @@ export const ANALYSIS_SCHEMA = obj({
     confidence: { type: 'string', enum: ['high', 'medium', 'low', 'unknown'] },
     note: S,
   }),
-  word_breakdown: arr(
-    obj({
-      hanja: S,
-      eum: S,
-      hun: S,
-      role: { type: 'string', description: '주어/서술어/목적어/관형어/부사어/접속사/전치사/종결사 등' },
-      gloss: S,
-    }),
-  ),
   word_order_reconstruction: S,
   modern_korean: S,
-  literal_english: { type: 'string', description: '직역' },
-  english_translation: { type: 'string', description: '의역' },
+  english_translation: S,
   methodology: arr(obj({ technique: S, explanation: S, example: S })),
   related_idioms: arr(obj({ idiom: S, eum: S, meaning: S, source: S, connection: S })),
   related_passages: arr(obj({ passage: S, eum: S, source: S, modern_korean: S, context: S })),
-  radical_memorization: arr(
-    obj({
-      hanja: S,
-      radical: S,
-      radical_name: S,
-      radical_meaning: S,
-      radical_strokes: { type: 'integer' },
-      same_radical_chars: arr(obj({ hanja: S, eum: S, meaning: S, memory_tip: S })),
-      etymology_note: S,
-      visual_mnemonic: S,
-    }),
-  ),
 });
 
 /** 원문 정규화 — 캐시 키 계산에 사용 */

@@ -411,62 +411,139 @@ button.primary:not(:disabled):hover {
 }
 .flash-inner {
   position: relative;
-  min-height: 260px;
+  min-height: 400px;
   border-radius: var(--radius);
   border: 1px solid var(--line);
   background: var(--paper-2);
-  padding: 22px;
+  padding: 26px;
   cursor: pointer;
 }
 .flash-front {
   text-align: center;
-  padding: 26px 0;
+  padding: 18px 0 8px;
 }
 .flash-front .big {
   font-family: var(--serif);
-  font-size: 88px;
+  font-size: clamp(120px, 34vw, 190px);
   line-height: 1;
+  letter-spacing: 0.02em;
+}
+.flash-front .reading {
+  margin-top: 14px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink);
 }
 .flash-front .rad {
-  margin-top: 16px;
-  font-size: 15px;
+  margin-top: 22px;
+  font-size: 18px;
   color: var(--ink-2);
 }
 .flash-front .rad b {
   font-family: var(--serif);
-  font-size: 22px;
+  font-size: 34px;
   color: var(--accent);
-  vertical-align: -2px;
+  vertical-align: -4px;
+  margin: 0 3px;
+}
+.flash-front .rad .var {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  vertical-align: 3px;
+}
+.flash-front .rad-sub {
+  margin-top: 6px;
+  font-size: 15px;
+  color: var(--ink-2);
+}
+.flash-front .strokes {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--ink-3);
 }
 .flash-front .hint {
-  margin-top: 20px;
+  margin-top: 24px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.flash-back .back-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.flash-back .back-head .bh-ch {
+  font-family: var(--serif);
+  font-size: 60px;
+  line-height: 1;
+}
+.flash-back .back-head .bh-rad {
+  font-size: 16px;
+  color: var(--ink-2);
+}
+.flash-back .back-head .bh-rad b {
+  font-family: var(--serif);
+  font-size: 28px;
+  color: var(--accent);
+  vertical-align: -3px;
+  margin: 0 2px;
+}
+.flash-back .net-label {
+  margin: 16px 0 4px;
   font-size: 12px;
+  letter-spacing: 0.06em;
   color: var(--ink-3);
 }
 .flash-back .net {
-  margin: 12px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 .flash-back .net li {
   display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 9px 0;
+  gap: 14px;
+  align-items: center;
+  padding: 11px 0;
   border-top: 1px dashed var(--line);
-  font-size: 13px;
+  font-size: 16px;
 }
 .flash-back .net li .k {
   font-family: var(--serif);
-  font-size: 22px;
-  min-width: 34px;
+  font-size: 38px;
+  min-width: 50px;
   text-align: center;
+  line-height: 1.1;
+}
+.flash-back .net li .t {
+  color: var(--ink-2);
 }
 .flash-back .net li .t b {
   font-weight: 600;
+  color: var(--ink);
+  margin-right: 5px;
 }
-.flash-back .net li .t span {
-  color: var(--ink-2);
+.flash-back .net li .t .s {
+  margin-left: 7px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* 어순 재구성 안의 한자 — 눌러서 사전 열기 */
+.render-line .tap {
+  font-weight: inherit;
+  cursor: pointer;
+  border-bottom: 1px dotted var(--line);
+}
+.render-line .tap:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 .flash-nav {
   display: flex;

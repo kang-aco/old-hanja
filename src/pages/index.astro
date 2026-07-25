@@ -18,14 +18,14 @@ const EXAMPLES = [
     <textarea
       id="input"
       rows="3"
-      maxlength="200"
+      maxlength="300"
       placeholder="한문 구절을 입력하세요. 예: 學而時習之"
       aria-label="한문 구절 입력"></textarea>
     <div class="row">
-      <span class="count" id="count">0 / 200자</span>
+      <span class="count" id="count">0 / 300자</span>
       <label
         class="toggle"
-        title="Sonnet 모델로 더 정확하게 풀이합니다. 비용이 약 3.5배(약 16원 → 54원) 늘어나므로 어려운 구절에만 쓰세요."
+        title="Sonnet 모델로 더 정확하게 풀이합니다. 비용이 약 3배 늘어나므로 어려운 구절에만 쓰세요."
       >
         <input type="checkbox" id="deep" />
         정밀 분석
@@ -63,28 +63,17 @@ const EXAMPLES = [
     <!-- 탭 1: 구문독해 풀이 -->
     <div class="panel" id="panel-read">
       <div class="step">
-        <h3><span class="no">1</span> 단어 분해</h3>
-        <div class="breakdown" id="r-breakdown"></div>
-        <p class="empty" style="font-size:12px">글자를 누르면 음·훈·부수를 볼 수 있습니다.</p>
-      </div>
-      <div class="step">
-        <h3><span class="no">2</span> 어순 재구성</h3>
+        <h3><span class="no">1</span> 어순 재구성</h3>
         <div class="card"><div class="render-line" id="r-order"></div></div>
+        <p class="empty" style="font-size:12px">한자를 누르면 음·훈·부수·획수를 볼 수 있습니다.</p>
       </div>
       <div class="step">
-        <h3><span class="no">3</span> 현대어 해석</h3>
+        <h3><span class="no">2</span> 현대어 해석</h3>
         <div class="card"><div class="trans" id="r-korean"></div></div>
       </div>
       <div class="step">
-        <h3><span class="no">4</span> 영어 번역</h3>
-        <div class="card">
-          <div class="trans en" id="r-en-literal"></div>
-          <p class="meta">직역 — 구조를 그대로 옮긴 것</p>
-        </div>
-        <div class="card">
-          <div class="trans en" id="r-en-free"></div>
-          <p class="meta">의역 — 자연스러운 영어</p>
-        </div>
+        <h3><span class="no">3</span> 영어 번역</h3>
+        <div class="card"><div class="trans en" id="r-en-free"></div></div>
       </div>
     </div>
 
@@ -158,10 +147,10 @@ const EXAMPLES = [
   // ── 입력 ────────────────────────────────────────────────────────────
   const HANJA_RE = /[㐀-䶿一-鿿豈-﫿]/;
 
-  // 실측 근사식과 동일: 출력 ≈ 1200 + 75 × 한자수, 고정 입력 ≈ 2650 토큰
+  // 실측 근사식과 동일: 출력 ≈ 700 + 15 × 한자수, 고정 입력 ≈ 1750 토큰
   function predictKrw(hanjaCount) {
-    const inTok = 2650;
-    const outTok = 1200 + 75 * hanjaCount;
+    const inTok = 1750;
+    const outTok = 700 + 15 * hanjaCount;
     const p = deep.checked ? { i: 3, o: 15 } : { i: 1, o: 5 };
     const usd = (inTok / 1e6) * p.i + (outTok / 1e6) * p.o;
     return Math.round(usd * 1400);
@@ -170,16 +159,16 @@ const EXAMPLES = [
   function syncCount() {
     const len = input.value.length;
     const hanja = [...input.value].filter((c) => HANJA_RE.test(c)).length;
-    let text = `${len} / 200자`;
+    let text = `${len} / 300자`;
     if (hanja > 0) {
-      // 실측: 한자당 약 0.43초 + 기본 7초
-      const sec = Math.round(hanja * 0.43 + 7);
+      // 실측: 9자 23초 / 62자 19초 / 136자 23초 — 길이 영향이 작다
+      const sec = Math.round(hanja * 0.06 + 20);
       text += ` · 한자 ${hanja}자 · 예상 약 ${predictKrw(hanja)}원 · ${sec}초`;
-      if (hanja > 150) text += ' · 150자를 넘어 분석할 수 없습니다';
+      if (hanja > 300) text += ' · 300자를 넘어 분석할 수 없습니다';
       else if (hanja > 45) text += ' · 문장 단위로 나누면 더 정확합니다';
     }
     $('count').textContent = text;
-    go.disabled = busy || hanja > 150;
+    go.disabled = busy || hanja > 300;
   }
   input.addEventListener('input', syncCount);
   deep.addEventListener('change', syncCount);
@@ -255,6 +244,14 @@ const EXAMPLES = [
     alertBox.hidden = false;
   }
 
+  // 텍스트 안의 한자를 클릭 가능한 조각으로 감싼다 (XSS 방지를 위해 먼저 escape)
+  function linkifyHanja(s) {
+    return esc(s).replace(
+      /[㐀-䶿一-鿿豈-﫿]/g,
+      (c) => `<b class="tap" data-hanja="${c}">${c}</b>`,
+    );
+  }
+
   // ── 렌더링 ──────────────────────────────────────────────────────────
   function render(a, meta, extras) {
     $('r-original').textContent = a.original || '';
@@ -268,31 +265,13 @@ const EXAMPLES = [
       $('r-source').textContent = `출전 · ${sg.book}${sg.chapter ? ' ' + sg.chapter : ''}${conf}`;
     }
 
-    // 1. 단어 분해
-    const bd = a.word_breakdown ?? [];
-    $('r-breakdown').innerHTML = bd.length
-      ? bd
-          .map(
-            (w) => `
-        <div class="unit" data-hanja="${esc(w.hanja)}">
-          <div class="ch">${esc(w.hanja)}</div>
-          <div class="eum">${esc(w.eum)}</div>
-          <div class="hun">${esc(w.hun)}</div>
-          <div class="role">${esc(w.role)}</div>
-          <div class="gloss">${esc(w.gloss)}</div>
-        </div>`,
-          )
-          .join('')
-      : '<p class="empty">분해할 글자가 없습니다.</p>';
-    document
-      .querySelectorAll('.unit[data-hanja]')
-      .forEach((el) => el.addEventListener('click', () => openChar(el.dataset.hanja)));
-
-    // 2~4. 번역 단계
-    $('r-order').textContent = a.word_order_reconstruction || '—';
+    // 1~3. 번역 단계. 어순 재구성의 한자는 눌러서 사전을 볼 수 있게 감싼다.
+    $('r-order').innerHTML = linkifyHanja(a.word_order_reconstruction || '—');
     $('r-korean').textContent = a.modern_korean || '—';
-    $('r-en-literal').textContent = a.literal_english || '—';
     $('r-en-free').textContent = a.english_translation || '—';
+    $('r-order')
+      .querySelectorAll('[data-hanja]')
+      .forEach((el) => el.addEventListener('click', () => openChar(el.dataset.hanja)));
 
     // 방법론
     const m = a.methodology ?? [];
@@ -388,54 +367,83 @@ const EXAMPLES = [
       }),
     );
 
-    renderFlash(a.radical_memorization ?? []);
+    loadRadicalCards(a.original || input.value);
     renderUsage(meta);
 
     result.hidden = false;
     selectTab('read');
   }
 
-  // ── 부수 플래시카드 ─────────────────────────────────────────────────
+  // ── 부수 플래시카드 (D1 기반 · LLM 비용 0) ──────────────────────────
   let cards = [];
   let ci = 0;
   let flipped = false;
 
-  function renderFlash(list) {
-    cards = list;
+  async function loadRadicalCards(text) {
+    $('r-flash').innerHTML = '<p class="empty">부수 정보를 불러오는 중…</p>';
+    cards = [];
     ci = 0;
     flipped = false;
+    try {
+      const res = await fetch('/api/radical-cards', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const d = await res.json();
+      cards = d.cards ?? [];
+    } catch {
+      cards = [];
+    }
     drawFlash();
   }
+
+  // 훈이 없으면 영문 뜻으로 대체 (Unihan 에는 한국어 훈이 없는 글자가 많다)
+  const glossOf = (c) => c.hun || c.definition || '';
 
   function drawFlash() {
     const box = $('r-flash');
     if (!cards.length) {
-      box.innerHTML = '<p class="empty">부수 암기 카드가 없습니다.</p>';
+      box.innerHTML = '<p class="empty">부수 정보를 찾지 못했습니다.</p>';
       return;
     }
     const c = cards[ci];
+    const sibs = c.same_radical_chars ?? [];
+
     const front = `
       <div class="flash-front">
         <div class="big">${esc(c.hanja)}</div>
-        <div class="rad">부수 <b>${esc(c.radical)}</b> ${esc(c.radical_name)} · ${esc(c.radical_strokes)}획</div>
-        <div class="hint">카드를 누르면 뒷면이 보입니다</div>
+        <div class="reading">${esc(c.eum)}${glossOf(c) ? ' · ' + esc(glossOf(c)) : ''}</div>
+        <div class="rad">
+          부수 <b>${esc(c.radical)}</b> ${esc(c.radical_name ?? '')}
+          ${c.variants ? `<span class="var">변형 ${esc(c.variants)}</span>` : ''}
+        </div>
+        <div class="rad-sub">${esc(c.radical_meaning ?? '')}</div>
+        ${c.stroke_count ? `<div class="strokes">총 ${esc(c.stroke_count)}획 · 부수 ${esc(c.radical_strokes ?? '?')}획</div>` : ''}
+        <div class="hint">카드를 누르면 같은 부수 한자가 보입니다</div>
       </div>`;
+
     const back = `
       <div class="flash-back">
-        <h4 style="margin:0 0 4px">${esc(c.hanja)} — 부수 ${esc(c.radical)} (${esc(c.radical_name)})</h4>
-        <p style="margin:0;font-size:13px;color:var(--ink-2)">${esc(c.radical_meaning)}</p>
-        <ul class="net">
-          ${(c.same_radical_chars ?? [])
-            .map(
-              (s) => `<li>
-                <span class="k">${esc(s.hanja)}</span>
-                <span class="t"><b>${esc(s.eum)} · ${esc(s.meaning)}</b><br><span>${esc(s.memory_tip)}</span></span>
-              </li>`,
-            )
-            .join('')}
-        </ul>
-        ${c.etymology_note ? `<div class="tip">자원 · ${esc(c.etymology_note)}</div>` : ''}
-        ${c.visual_mnemonic ? `<div class="tip">암기 팁 · ${esc(c.visual_mnemonic)}</div>` : ''}
+        <div class="back-head">
+          <span class="bh-ch">${esc(c.hanja)}</span>
+          <span class="bh-rad">부수 <b>${esc(c.radical)}</b> ${esc(c.radical_name ?? '')}</span>
+        </div>
+        ${c.mnemonic ? `<div class="tip">암기 팁 · ${esc(c.mnemonic)}</div>` : ''}
+        <p class="net-label">같은 부수를 쓰는 한자</p>
+        ${
+          sibs.length
+            ? `<ul class="net">${sibs
+                .map(
+                  (s) => `<li>
+                    <span class="k">${esc(s.hanja)}</span>
+                    <span class="t"><b>${esc(s.eum)}</b> ${esc(glossOf(s))}
+                      ${s.stroke_count ? `<span class="s">${esc(s.stroke_count)}획</span>` : ''}</span>
+                  </li>`,
+                )
+                .join('')}</ul>`
+            : '<p class="empty">사전에 등록된 같은 부수 한자가 없습니다.</p>'
+        }
       </div>`;
 
     box.innerHTML = `
@@ -525,18 +533,25 @@ const EXAMPLES = [
     const rows = [];
     if (d?.found) {
       const c = d.character;
-      rows.push(['음', c.eum], ['훈', c.hun]);
+      rows.push(['음', c.eum]);
+      if (c.hun) rows.push(['훈', c.hun]);
       if (c.radical) {
         const r = d.radical;
         rows.push(['부수', `${c.radical}${r ? ` (${r.name}, ${r.stroke_count}획)` : ''}`]);
       }
       if (c.stroke_count) rows.push(['총획', `${c.stroke_count}획`]);
+      if (!c.hun && c.definition) rows.push(['뜻(영문)', c.definition]);
       if (c.note) rows.push(['메모', c.note]);
       if (d.radical?.mnemonic) rows.push(['부수 팁', d.radical.mnemonic]);
     }
 
     const sib = (d?.siblings ?? [])
-      .map((s) => `<span><b class="hanja">${esc(s.hanja)}</b> ${esc(s.eum)}·${esc(s.hun)}</span>`)
+      .filter((s) => s.hun || s.definition)
+      .slice(0, 12)
+      .map(
+        (s) =>
+          `<span><b class="hanja">${esc(s.hanja)}</b> ${esc(s.eum)}${s.hun ? '·' + esc(s.hun) : ''}</span>`,
+      )
       .join('');
 
     modal.innerHTML = `
