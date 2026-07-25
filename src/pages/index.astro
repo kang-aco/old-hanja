@@ -70,6 +70,7 @@ const EXAMPLES = [
       <div class="step">
         <h3><span class="no">2</span> 어순 재구성</h3>
         <div class="card"><div class="render-line" id="r-order"></div></div>
+        <div class="warn" id="r-order-warn" hidden></div>
         <p class="empty" style="font-size:12px">한자를 누르면 음·훈·부수·획수를 볼 수 있습니다.</p>
       </div>
       <div class="step">
@@ -241,7 +242,7 @@ const EXAMPLES = [
         showAlert(data.error ?? '분석에 실패했습니다.');
         return;
       }
-      render(data.analysis, data.meta, data.extras);
+      render(data.analysis, data.meta, data.extras, data.warnings);
       loadRecent();
     } catch (err) {
       showAlert('네트워크 오류가 발생했습니다. 다시 시도해 주세요.');
@@ -279,7 +280,7 @@ const EXAMPLES = [
   }
 
   // ── 렌더링 ──────────────────────────────────────────────────────────
-  function render(a, meta, extras) {
+  function render(a, meta, extras, warnings) {
     $('r-original').textContent = a.original || '';
     $('r-eum').textContent = a.eum || '';
 
@@ -298,6 +299,11 @@ const EXAMPLES = [
     $('r-order')
       .querySelectorAll('[data-hanja]')
       .forEach((el) => el.addEventListener('click', () => openChar(el.dataset.hanja)));
+
+    // 서버의 결정론적 검증에서 원문과 어긋난 것이 잡혔으면 알려 준다
+    const warn = (warnings ?? []).join(' ');
+    $('r-order-warn').hidden = !warn;
+    $('r-order-warn').textContent = warn;
 
     // 방법론
     const m = a.methodology ?? [];

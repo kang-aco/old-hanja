@@ -560,6 +560,21 @@ button.primary:not(:disabled):hover {
   color: var(--ink-3);
 }
 
+/* 검증 경고 — 원문과 어긋난 어순 재구성 */
+.warn {
+  margin-top: 8px;
+  border: 1px solid #e6d5ae;
+  background: #fdf8ec;
+  color: #7a5c1e;
+  border-radius: 10px;
+  padding: 10px 13px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.warn[hidden] {
+  display: none;
+}
+
 /* 어순 재구성 안의 한자 — 눌러서 사전 열기 */
 .render-line .tap {
   font-weight: inherit;
