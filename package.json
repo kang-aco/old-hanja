@@ -1,0 +1,31 @@
+{
+  "name": "hanmun-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "한문독해 — 한문 구절을 영어 구문독해 방식으로 풀어주는 학습 앱",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "wrangler pages dev ./dist",
+    "check": "astro check",
+    "deploy": "astro build && wrangler pages deploy ./dist",
+    "db:create": "wrangler d1 create hanmun-db",
+    "db:migrate:local": "wrangler d1 execute hanmun-db --local --file=./db/schema.sql",
+    "db:migrate": "wrangler d1 execute hanmun-db --remote --file=./db/schema.sql",
+    "db:seed:local": "node ./scripts/seed.mjs --local",
+    "db:seed": "node ./scripts/seed.mjs --remote",
+    "db:reset:local": "npm run db:migrate:local && npm run db:seed:local"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0",
+    "@astrojs/cloudflare": "^12.6.13",
+    "astro": "^5.18.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.9",
+    "@cloudflare/workers-types": "^5.20260722.1",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.114.0"
+  }
+}

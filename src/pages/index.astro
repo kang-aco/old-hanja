@@ -1,0 +1,549 @@
+---
+import Base from '../layouts/Base.astro';
+
+export const prerender = false;
+
+const EXAMPLES = [
+  '學而時習之, 不亦說乎',
+  '溫故而知新',
+  '己所不欲, 勿施於人',
+  '過猶不及',
+  '上善若水',
+  '知彼知己, 百戰不殆',
+];
+---
+
+<Base>
+  <section class="composer">
+    <textarea
+      id="input"
+      rows="3"
+      maxlength="200"
+      placeholder="한문 구절을 입력하세요. 예: 學而時習之"
+      aria-label="한문 구절 입력"></textarea>
+    <div class="row">
+      <span class="count" id="count">0 / 200자</span>
+      <label
+        class="toggle"
+        title="Sonnet 모델로 더 정확하게 풀이합니다. 비용이 약 3.5배(약 16원 → 54원) 늘어나므로 어려운 구절에만 쓰세요."
+      >
+        <input type="checkbox" id="deep" />
+        정밀 분석
+      </label>
+      <button class="primary" id="go" type="button">풀이 보기</button>
+    </div>
+  </section>
+
+  <p class="chips-label">이런 구절로 시작해 보세요</p>
+  <div class="chips">
+    {EXAMPLES.map((ex) => <button class="chip hanja" type="button" data-ex={ex}>{ex}</button>)}
+  </div>
+
+  <div class="loading" id="loading" hidden>
+    <div class="brush hanja">文</div>
+    <p id="loading-msg">구절을 분해하는 중…</p>
+  </div>
+
+  <div class="alert" id="alert" hidden></div>
+
+  <section id="result" hidden>
+    <div class="result-head">
+      <div class="original hanja" id="r-original"></div>
+      <div class="eum" id="r-eum"></div>
+      <div id="r-source-wrap"><span class="source" id="r-source"></span></div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button role="tab" data-tab="read" aria-selected="true">풀이</button>
+      <button role="tab" data-tab="method" aria-selected="false">방법론</button>
+      <button role="tab" data-tab="related" aria-selected="false">연관 콘텐츠</button>
+      <button role="tab" data-tab="radical" aria-selected="false">부수 암기</button>
+    </div>
+
+    <!-- 탭 1: 구문독해 풀이 -->
+    <div class="panel" id="panel-read">
+      <div class="step">
+        <h3><span class="no">1</span> 단어 분해</h3>
+        <div class="breakdown" id="r-breakdown"></div>
+        <p class="empty" style="font-size:12px">글자를 누르면 음·훈·부수를 볼 수 있습니다.</p>
+      </div>
+      <div class="step">
+        <h3><span class="no">2</span> 어순 재구성</h3>
+        <div class="card"><div class="render-line" id="r-order"></div></div>
+      </div>
+      <div class="step">
+        <h3><span class="no">3</span> 현대어 해석</h3>
+        <div class="card"><div class="trans" id="r-korean"></div></div>
+      </div>
+      <div class="step">
+        <h3><span class="no">4</span> 영어 번역</h3>
+        <div class="card">
+          <div class="trans en" id="r-en-literal"></div>
+          <p class="meta">직역 — 구조를 그대로 옮긴 것</p>
+        </div>
+        <div class="card">
+          <div class="trans en" id="r-en-free"></div>
+          <p class="meta">의역 — 자연스러운 영어</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 탭 2: 번역 방법론 -->
+    <div class="panel" id="panel-method" hidden>
+      <div id="r-method"></div>
+      <p class="chips-label" style="margin-top:22px">
+        한문 번역 7단계 전체 방법론은 <a href="/method" style="color:var(--accent)">여기</a>에서 볼 수
+        있습니다.
+      </p>
+    </div>
+
+    <!-- 탭 3: 연관 콘텐츠 -->
+    <div class="panel" id="panel-related" hidden>
+      <div class="step">
+        <h3>연관 고사성어</h3>
+        <div id="r-idioms"></div>
+      </div>
+      <div class="step">
+        <h3>연관 명구</h3>
+        <div id="r-passages"></div>
+      </div>
+    </div>
+
+    <!-- 탭 4: 부수 암기 -->
+    <div class="panel" id="panel-radical" hidden>
+      <div class="flash" id="r-flash"></div>
+    </div>
+
+    <div class="usage" id="r-usage"></div>
+  </section>
+
+  <section class="recent" id="recent" hidden>
+    <h2>최근 검색</h2>
+    <ul id="recent-list"></ul>
+  </section>
+
+  <div class="overlay" id="overlay" hidden>
+    <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
+  </div>
+</Base>
+
+<script>
+  // @ts-nocheck — 브라우저 스프링클 JS. 서버 코드(src/lib, src/pages/api)는 strict 로 검사됩니다.
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) =>
+    String(s ?? '').replace(
+      /[&<>"']/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+    );
+
+  const input = $('input');
+  const deep = $('deep');
+  const go = $('go');
+  const loading = $('loading');
+  const loadingMsg = $('loading-msg');
+  const alertBox = $('alert');
+  const result = $('result');
+
+  let busy = false;
+  let loadTimer = null;
+
+  const LOAD_MSGS = [
+    '구절을 분해하는 중…',
+    '어순을 되짚는 중…',
+    '허사(虛辭)를 살피는 중…',
+    '고사성어를 찾는 중…',
+    '부수를 엮는 중…',
+  ];
+
+  // ── 입력 ────────────────────────────────────────────────────────────
+  function syncCount() {
+    $('count').textContent = `${input.value.length} / 200자`;
+  }
+  input.addEventListener('input', syncCount);
+  input.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') analyze();
+  });
+  syncCount();
+
+  document.querySelectorAll('.chip[data-ex]').forEach((el) =>
+    el.addEventListener('click', () => {
+      input.value = el.dataset.ex;
+      syncCount();
+      analyze();
+    }),
+  );
+
+  go.addEventListener('click', () => analyze());
+
+  // ── 분석 ────────────────────────────────────────────────────────────
+  async function analyze(text) {
+    if (busy) return;
+    const value = (text ?? input.value).trim();
+    if (!value) {
+      showAlert('한문 구절을 입력해 주세요.');
+      return;
+    }
+    input.value = value;
+    syncCount();
+
+    busy = true;
+    go.disabled = true;
+    alertBox.hidden = true;
+    result.hidden = true;
+    startLoading();
+
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: value, mode: deep.checked ? 'deep' : 'light' }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showAlert(data.error ?? '분석에 실패했습니다.');
+        return;
+      }
+      render(data.analysis, data.meta, data.extras);
+      loadRecent();
+    } catch (err) {
+      showAlert('네트워크 오류가 발생했습니다. 다시 시도해 주세요.');
+    } finally {
+      stopLoading();
+      busy = false;
+      go.disabled = false;
+    }
+  }
+
+  function startLoading() {
+    let i = 0;
+    loadingMsg.textContent = LOAD_MSGS[0];
+    loading.hidden = false;
+    loadTimer = setInterval(() => {
+      i = (i + 1) % LOAD_MSGS.length;
+      loadingMsg.textContent = LOAD_MSGS[i];
+    }, 1600);
+  }
+  function stopLoading() {
+    clearInterval(loadTimer);
+    loading.hidden = true;
+  }
+  function showAlert(msg) {
+    alertBox.textContent = msg;
+    alertBox.hidden = false;
+  }
+
+  // ── 렌더링 ──────────────────────────────────────────────────────────
+  function render(a, meta, extras) {
+    $('r-original').textContent = a.original || '';
+    $('r-eum').textContent = a.eum || '';
+
+    const sg = a.source_guess ?? {};
+    const hasSource = sg.book && sg.book !== '미상' && sg.confidence !== 'unknown';
+    $('r-source-wrap').hidden = !hasSource;
+    if (hasSource) {
+      const conf = { high: '', medium: ' (추정)', low: ' (추정)' }[sg.confidence] ?? '';
+      $('r-source').textContent = `출전 · ${sg.book}${sg.chapter ? ' ' + sg.chapter : ''}${conf}`;
+    }
+
+    // 1. 단어 분해
+    const bd = a.word_breakdown ?? [];
+    $('r-breakdown').innerHTML = bd.length
+      ? bd
+          .map(
+            (w) => `
+        <div class="unit" data-hanja="${esc(w.hanja)}">
+          <div class="ch">${esc(w.hanja)}</div>
+          <div class="eum">${esc(w.eum)}</div>
+          <div class="hun">${esc(w.hun)}</div>
+          <div class="role">${esc(w.role)}</div>
+          <div class="gloss">${esc(w.gloss)}</div>
+        </div>`,
+          )
+          .join('')
+      : '<p class="empty">분해할 글자가 없습니다.</p>';
+    document
+      .querySelectorAll('.unit[data-hanja]')
+      .forEach((el) => el.addEventListener('click', () => openChar(el.dataset.hanja)));
+
+    // 2~4. 번역 단계
+    $('r-order').textContent = a.word_order_reconstruction || '—';
+    $('r-korean').textContent = a.modern_korean || '—';
+    $('r-en-literal').textContent = a.literal_english || '—';
+    $('r-en-free').textContent = a.english_translation || '—';
+
+    // 방법론
+    const m = a.methodology ?? [];
+    $('r-method').innerHTML = m.length
+      ? m
+          .map(
+            (t) => `
+        <div class="card">
+          <h4>▸ ${esc(t.technique)}</h4>
+          <p>${esc(t.explanation)}</p>
+          ${t.example ? `<p class="meta hanja">${esc(t.example)}</p>` : ''}
+        </div>`,
+          )
+          .join('')
+      : '<p class="empty">이 구절에 적용된 특별한 기법이 없습니다.</p>';
+
+    // 연관 고사성어 — AI 결과 + D1 시드를 합치고 중복 제거
+    const seenIdiom = new Set();
+    const idioms = [];
+    for (const it of a.related_idioms ?? []) {
+      if (seenIdiom.has(it.idiom)) continue;
+      seenIdiom.add(it.idiom);
+      idioms.push({ ...it, from: 'ai' });
+    }
+    for (const it of extras?.idioms ?? []) {
+      if (idioms.length >= 4) break;
+      if (seenIdiom.has(it.hanja)) continue;
+      seenIdiom.add(it.hanja);
+      idioms.push({
+        idiom: it.hanja,
+        eum: it.eum,
+        meaning: it.meaning,
+        source: it.source ?? '',
+        connection: '',
+        story: it.story ?? '',
+        from: 'db',
+      });
+    }
+    $('r-idioms').innerHTML = idioms.length
+      ? idioms
+          .map(
+            (it) => `
+        <div class="card">
+          <h4><span class="hanja">${esc(it.idiom)}</span> <span style="color:var(--ink-3);font-size:13px">${esc(it.eum)}</span></h4>
+          <p>${esc(it.meaning)}</p>
+          ${it.source ? `<p class="meta">출전 · ${esc(it.source)}</p>` : ''}
+          ${it.connection ? `<p class="meta">연관성 · ${esc(it.connection)}</p>` : ''}
+          ${it.story ? `<p class="meta">유래 · ${esc(it.story)}</p>` : ''}
+        </div>`,
+          )
+          .join('')
+      : '<p class="empty">연관 고사성어를 찾지 못했습니다.</p>';
+
+    // 연관 명구
+    const seenPsg = new Set();
+    const psgs = [];
+    for (const p of a.related_passages ?? []) {
+      if (seenPsg.has(p.passage)) continue;
+      seenPsg.add(p.passage);
+      psgs.push(p);
+    }
+    for (const p of extras?.passages ?? []) {
+      if (psgs.length >= 4) break;
+      if (seenPsg.has(p.passage)) continue;
+      seenPsg.add(p.passage);
+      psgs.push({
+        passage: p.passage,
+        eum: p.eum ?? '',
+        source: `${p.source}${p.chapter ? ' ' + p.chapter : ''}`,
+        modern_korean: p.modern_korean,
+        context: '',
+      });
+    }
+    $('r-passages').innerHTML = psgs.length
+      ? psgs
+          .map(
+            (p) => `
+        <div class="card">
+          <h4 class="hanja" style="font-size:18px">${esc(p.passage)}</h4>
+          ${p.eum ? `<p class="meta">${esc(p.eum)}</p>` : ''}
+          <p style="margin-top:6px">${esc(p.modern_korean)}</p>
+          ${p.source ? `<p class="meta">출전 · ${esc(p.source)}</p>` : ''}
+          ${p.context ? `<p class="meta">연관성 · ${esc(p.context)}</p>` : ''}
+          <button class="link" data-analyze="${esc(p.passage)}">이 구절 풀이보기</button>
+        </div>`,
+          )
+          .join('')
+      : '<p class="empty">연관 명구를 찾지 못했습니다.</p>';
+    document.querySelectorAll('[data-analyze]').forEach((el) =>
+      el.addEventListener('click', () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        analyze(el.dataset.analyze);
+      }),
+    );
+
+    renderFlash(a.radical_memorization ?? []);
+    renderUsage(meta);
+
+    result.hidden = false;
+    selectTab('read');
+  }
+
+  // ── 부수 플래시카드 ─────────────────────────────────────────────────
+  let cards = [];
+  let ci = 0;
+  let flipped = false;
+
+  function renderFlash(list) {
+    cards = list;
+    ci = 0;
+    flipped = false;
+    drawFlash();
+  }
+
+  function drawFlash() {
+    const box = $('r-flash');
+    if (!cards.length) {
+      box.innerHTML = '<p class="empty">부수 암기 카드가 없습니다.</p>';
+      return;
+    }
+    const c = cards[ci];
+    const front = `
+      <div class="flash-front">
+        <div class="big">${esc(c.hanja)}</div>
+        <div class="rad">부수 <b>${esc(c.radical)}</b> ${esc(c.radical_name)} · ${esc(c.radical_strokes)}획</div>
+        <div class="hint">카드를 누르면 뒷면이 보입니다</div>
+      </div>`;
+    const back = `
+      <div class="flash-back">
+        <h4 style="margin:0 0 4px">${esc(c.hanja)} — 부수 ${esc(c.radical)} (${esc(c.radical_name)})</h4>
+        <p style="margin:0;font-size:13px;color:var(--ink-2)">${esc(c.radical_meaning)}</p>
+        <ul class="net">
+          ${(c.same_radical_chars ?? [])
+            .map(
+              (s) => `<li>
+                <span class="k">${esc(s.hanja)}</span>
+                <span class="t"><b>${esc(s.eum)} · ${esc(s.meaning)}</b><br><span>${esc(s.memory_tip)}</span></span>
+              </li>`,
+            )
+            .join('')}
+        </ul>
+        ${c.etymology_note ? `<div class="tip">자원 · ${esc(c.etymology_note)}</div>` : ''}
+        ${c.visual_mnemonic ? `<div class="tip">암기 팁 · ${esc(c.visual_mnemonic)}</div>` : ''}
+      </div>`;
+
+    box.innerHTML = `
+      <div class="flash-inner" id="flip">${flipped ? back : front}</div>
+      <div class="flash-nav">
+        <button type="button" id="prev" ${ci === 0 ? 'disabled' : ''}>← 이전</button>
+        <button type="button" id="next" ${ci === cards.length - 1 ? 'disabled' : ''}>다음 →</button>
+        <span class="pos">${ci + 1} / ${cards.length}</span>
+      </div>`;
+
+    $('flip').addEventListener('click', () => {
+      flipped = !flipped;
+      drawFlash();
+    });
+    $('prev').addEventListener('click', () => {
+      if (ci > 0) {
+        ci--;
+        flipped = false;
+        drawFlash();
+      }
+    });
+    $('next').addEventListener('click', () => {
+      if (ci < cards.length - 1) {
+        ci++;
+        flipped = false;
+        drawFlash();
+      }
+    });
+  }
+
+  // ── 사용량 표시 ─────────────────────────────────────────────────────
+  function renderUsage(meta) {
+    if (!meta) {
+      $('r-usage').innerHTML = '';
+      return;
+    }
+    const pills = [];
+    if (meta.cached) {
+      pills.push('<span class="pill free">저장된 결과 · 추가 비용 0원</span>');
+      pills.push(`<span class="pill">${esc(meta.model)}</span>`);
+    } else {
+      const krw = Math.round(meta.cost_usd * 1400 * 100) / 100;
+      pills.push(`<span class="pill">${esc(meta.model)}</span>`);
+      pills.push(
+        `<span class="pill">토큰 ${meta.input_tokens} in / ${meta.output_tokens} out</span>`,
+      );
+      pills.push(`<span class="pill">약 $${meta.cost_usd.toFixed(4)} (₩${krw})</span>`);
+    }
+    $('r-usage').innerHTML = pills.join('');
+  }
+
+  // ── 탭 ──────────────────────────────────────────────────────────────
+  const TABS = ['read', 'method', 'related', 'radical'];
+  function selectTab(name) {
+    document
+      .querySelectorAll('.tabs button')
+      .forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+    TABS.forEach((t) => ($(`panel-${t}`).hidden = t !== name));
+  }
+  document
+    .querySelectorAll('.tabs button')
+    .forEach((b) => b.addEventListener('click', () => selectTab(b.dataset.tab)));
+
+  // ── 한자 팝업 ───────────────────────────────────────────────────────
+  const overlay = $('overlay');
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.hidden = true;
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') overlay.hidden = true;
+  });
+
+  async function openChar(hanja) {
+    const modal = $('modal');
+    modal.innerHTML = `<button class="close" type="button">×</button><div class="big hanja">${esc(hanja)}</div><p class="empty" style="text-align:center">불러오는 중…</p>`;
+    overlay.hidden = false;
+    modal.querySelector('.close').addEventListener('click', () => (overlay.hidden = true));
+
+    let d = null;
+    try {
+      const res = await fetch(`/api/character?hanja=${encodeURIComponent(hanja)}`);
+      d = await res.json();
+    } catch {
+      /* 무시 */
+    }
+
+    const rows = [];
+    if (d?.found) {
+      const c = d.character;
+      rows.push(['음', c.eum], ['훈', c.hun]);
+      if (c.radical) {
+        const r = d.radical;
+        rows.push(['부수', `${c.radical}${r ? ` (${r.name}, ${r.stroke_count}획)` : ''}`]);
+      }
+      if (c.stroke_count) rows.push(['총획', `${c.stroke_count}획`]);
+      if (c.note) rows.push(['메모', c.note]);
+      if (d.radical?.mnemonic) rows.push(['부수 팁', d.radical.mnemonic]);
+    }
+
+    const sib = (d?.siblings ?? [])
+      .map((s) => `<span><b class="hanja">${esc(s.hanja)}</b> ${esc(s.eum)}·${esc(s.hun)}</span>`)
+      .join('');
+
+    modal.innerHTML = `
+      <button class="close" type="button">×</button>
+      <div class="big hanja">${esc(hanja)}</div>
+      ${
+        rows.length
+          ? `<dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`
+          : '<p class="empty" style="text-align:center">사전에 아직 등록되지 않은 한자입니다.</p>'
+      }
+      ${sib ? `<p class="meta" style="margin:16px 0 0;font-size:12px;color:var(--ink-3)">같은 부수 한자</p><div class="sib">${sib}</div>` : ''}`;
+    modal.querySelector('.close').addEventListener('click', () => (overlay.hidden = true));
+  }
+
+  // ── 최근 검색 ───────────────────────────────────────────────────────
+  async function loadRecent() {
+    try {
+      const res = await fetch('/api/history');
+      const d = await res.json();
+      const list = d.recent ?? [];
+      $('recent').hidden = list.length === 0;
+      $('recent-list').innerHTML = list
+        .map((r) => `<li><button type="button" data-recent="${esc(r.original_text)}">${esc(r.original_text)}</button></li>`)
+        .join('');
+      document
+        .querySelectorAll('[data-recent]')
+        .forEach((el) => el.addEventListener('click', () => analyze(el.dataset.recent)));
+    } catch {
+      /* 무시 */
+    }
+  }
+  loadRecent();
+</script>

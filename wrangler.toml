@@ -1,0 +1,22 @@
+name = "hanmun-app"
+compatibility_date = "2026-07-25"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "./dist"
+
+# ── D1: 고사성어 / 부수 / 한자 / 검색기록 / 분석 캐시 ───────────────────────
+# 최초 1회:  npm run db:create   →  출력된 database_id 를 아래에 붙여넣기
+[[d1_databases]]
+binding = "DB"
+database_name = "hanmun-db"
+database_id = "REPLACE_ME_AFTER_npm_run_db_create"
+
+# ── R2: 폰트 / 정적 에셋 / PDF 내보내기 (Phase 4~5) ────────────────────────
+# 버킷을 먼저 만든 뒤 주석을 해제하세요:  wrangler r2 bucket create hanmun-assets
+# [[r2_buckets]]
+# binding = "R2"
+# bucket_name = "hanmun-assets"
+
+# ── 시크릿 ────────────────────────────────────────────────────────────────
+# 로컬:   .dev.vars 에 ANTHROPIC_API_KEY=sk-ant-...
+# 배포:   Cloudflare Pages 대시보드 → Settings → Environment variables (Secret)
+#         또는  wrangler pages secret put ANTHROPIC_API_KEY

@@ -1,0 +1,51 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  tagline?: string;
+}
+const { title = '한문독해', tagline = '한문을 영어 구문독해하듯 풀어보세요' } = Astro.props;
+---
+
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content="한문 구절을 단어 분해 → 어순 재구성 → 현대어 → 영어 순으로 풀이하고, 번역 방법론과 연관 고사성어, 부수 암기 카드까지 함께 보여 줍니다." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E6%96%87%3C/text%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="site">
+        <h1><a href="/">한문독해</a></h1>
+        <p class="tagline">{tagline}</p>
+        <nav>
+          <a href="/">구문독해</a> &nbsp;·&nbsp; <a href="/dictionary">부수 사전</a> &nbsp;·&nbsp;
+          <a href="/method">번역 7단계</a>
+        </nav>
+      </header>
+
+      <main>
+        <slot />
+      </main>
+
+      <footer class="site">
+        원문은 공용 도메인 고전에서 가져왔고, 풀이는 AI가 생성합니다. 시험·논문에 인용할 때는 원전을
+        확인하세요.<br />
+        같은 구절을 다시 조회하면 저장된 결과를 쓰므로 추가 비용이 들지 않습니다.
+      </footer>
+    </div>
+  </body>
+</html>

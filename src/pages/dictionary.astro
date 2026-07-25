@@ -1,0 +1,148 @@
+---
+import Base from '../layouts/Base.astro';
+import { listRadicals } from '../lib/db';
+
+export const prerender = false;
+
+const db = Astro.locals.runtime?.env?.DB;
+const radicals = db ? await listRadicals(db) : [];
+
+// 획수별로 묶기
+const groups = new Map<number, typeof radicals>();
+for (const r of radicals) {
+  const list = groups.get(r.stroke_count) ?? [];
+  list.push(r);
+  groups.set(r.stroke_count, list);
+}
+const ordered = [...groups.entries()].sort((a, b) => a[0] - b[0]);
+---
+
+<Base title="부수 사전 — 한문독해" tagline="강희부수 214개">
+  {
+    radicals.length === 0 ? (
+      <div class="alert">
+        부수 데이터가 아직 없습니다. <code>npm run db:reset:local</code> 로 스키마와 시드를 넣어
+        주세요.
+      </div>
+    ) : (
+      <>
+        <div class="search-bar">
+          <input
+            id="filter"
+            type="search"
+            placeholder="부수·이름·의미로 검색 (예: 물, 氵, 마음)"
+            aria-label="부수 검색"
+          />
+        </div>
+        <p class="chips-label">전체 {radicals.length}개 · 부수를 누르면 그 부수를 쓰는 한자를 봅니다</p>
+
+        {ordered.map(([strokes, list]) => (
+          <div data-group={strokes}>
+            <p class="stroke-head">{strokes}획</p>
+            <div class="rad-grid">
+              {list.map((r) => (
+                <button
+                  type="button"
+                  class="rad-cell"
+                  data-radical={r.radical}
+                  data-search={`${r.radical} ${r.name} ${r.meaning} ${r.variants ?? ''}`}
+                >
+                  <div class="r hanja">{r.radical}</div>
+                  <div class="n">{r.name}</div>
+                  <div class="s">{r.variants ? `변형 ${r.variants}` : `${r.id}번`}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </>
+    )
+  }
+
+  <div class="overlay" id="overlay" hidden>
+    <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
+  </div>
+</Base>
+
+<script>
+  // @ts-nocheck — 브라우저 스프링클 JS. 서버 코드(src/lib, src/pages/api)는 strict 로 검사됩니다.
+  const esc = (s) =>
+    String(s ?? '').replace(
+      /[&<>"']/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+    );
+
+  const overlay = document.getElementById('overlay');
+  const modal = document.getElementById('modal');
+  const filter = document.getElementById('filter');
+
+  // 검색 필터
+  filter?.addEventListener('input', () => {
+    const q = filter.value.trim().toLowerCase();
+    document.querySelectorAll('.rad-cell').forEach((cell) => {
+      const hit = !q || (cell.dataset.search ?? '').toLowerCase().includes(q);
+      cell.style.display = hit ? '' : 'none';
+    });
+    // 결과가 없는 획수 그룹은 감춘다
+    document.querySelectorAll('[data-group]').forEach((g) => {
+      const any = [...g.querySelectorAll('.rad-cell')].some((c) => c.style.display !== 'none');
+      g.style.display = any ? '' : 'none';
+    });
+  });
+
+  overlay?.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.hidden = true;
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && overlay) overlay.hidden = true;
+  });
+
+  document.querySelectorAll('.rad-cell[data-radical]').forEach((cell) =>
+    cell.addEventListener('click', () => open(cell.dataset.radical)),
+  );
+
+  async function open(radical) {
+    modal.innerHTML = `<button class="close" type="button">×</button><div class="big hanja">${esc(radical)}</div><p class="empty" style="text-align:center">불러오는 중…</p>`;
+    overlay.hidden = false;
+    modal.querySelector('.close').addEventListener('click', () => (overlay.hidden = true));
+
+    let d = null;
+    try {
+      const res = await fetch(`/api/radicals?radical=${encodeURIComponent(radical)}`);
+      d = await res.json();
+    } catch {
+      /* 무시 */
+    }
+
+    if (!d?.found) {
+      modal.innerHTML = `<button class="close" type="button">×</button><p class="empty">정보를 불러올 수 없습니다.</p>`;
+      modal.querySelector('.close').addEventListener('click', () => (overlay.hidden = true));
+      return;
+    }
+
+    const r = d.radical;
+    const rows = [
+      ['번호', `${r.id}번`],
+      ['이름', r.name],
+      ['의미', r.meaning],
+      ['획수', `${r.stroke_count}획`],
+    ];
+    if (r.variants) rows.push(['변형', r.variants]);
+
+    const chars = (d.characters ?? [])
+      .map((c) => `<span><b class="hanja">${esc(c.hanja)}</b> ${esc(c.eum)}·${esc(c.hun)}</span>`)
+      .join('');
+
+    modal.innerHTML = `
+      <button class="close" type="button">×</button>
+      <div class="big hanja">${esc(r.radical)}</div>
+      <dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+      ${r.mnemonic ? `<div class="tip" style="margin-top:14px">암기 팁 · ${esc(r.mnemonic)}</div>` : ''}
+      ${
+        chars
+          ? `<p style="margin:16px 0 0;font-size:12px;color:var(--ink-3)">이 부수를 쓰는 한자 (사전 등록분)</p><div class="sib">${chars}</div>`
+          : `<p class="empty" style="margin-top:14px">아직 등록된 한자가 없습니다.</p>`
+      }`;
+    modal.querySelector('.close').addEventListener('click', () => (overlay.hidden = true));
+  }
+</script>
