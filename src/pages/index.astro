@@ -156,10 +156,29 @@ const EXAMPLES = [
   ];
 
   // ── 입력 ────────────────────────────────────────────────────────────
+  const HANJA_RE = /[㐀-䶿一-鿿豈-﫿]/;
+
+  // 실측 근사식과 동일: 출력 ≈ 1200 + 75 × 한자수, 고정 입력 ≈ 2650 토큰
+  function predictKrw(hanjaCount) {
+    const inTok = 2650;
+    const outTok = 1200 + 75 * hanjaCount;
+    const p = deep.checked ? { i: 3, o: 15 } : { i: 1, o: 5 };
+    const usd = (inTok / 1e6) * p.i + (outTok / 1e6) * p.o;
+    return Math.round(usd * 1400);
+  }
+
   function syncCount() {
-    $('count').textContent = `${input.value.length} / 200자`;
+    const len = input.value.length;
+    const hanja = [...input.value].filter((c) => HANJA_RE.test(c)).length;
+    let text = `${len} / 200자`;
+    if (hanja > 0) {
+      text += ` · 한자 ${hanja}자 · 예상 약 ${predictKrw(hanja)}원`;
+      if (hanja > 45) text += ' · 문장 단위로 나누면 더 정확합니다';
+    }
+    $('count').textContent = text;
   }
   input.addEventListener('input', syncCount);
+  deep.addEventListener('change', syncCount);
   input.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') analyze();
   });

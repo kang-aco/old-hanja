@@ -29,8 +29,29 @@ export const PRICING: Record<string, { input: number; output: number }> = {
   'claude-opus-5': { input: 5.0, output: 25.0 },
 };
 
-/** 출력 상한 — 넘칠 일이 거의 없지만 사고(runaway)를 막는 하드 캡 */
-export const MAX_TOKENS: Record<Mode, number> = { light: 4000, deep: 6000 };
+/**
+ * 출력 예산 — 입력 길이에 비례해서 잡는다.
+ *
+ * word_breakdown 이 한자 한 글자당 항목 1개를 만들기 때문에 출력량은 한자 수에 선형으로 늘어난다.
+ * 실측(한자 5자→1533, 8자→1713, 12자→2008 토큰)에서 얻은 근사식:
+ *     필요 출력 ≈ 1200 + 75 × 한자수     (오차 5% 이내, 항상 약간 여유 있게 예측)
+ * 여기에 약 47% 여유를 둔다. 캡 24000 은 입력 상한(200자)에서도 걸리지 않는 값이라
+ * 사실상 폭주 방지용 안전장치로만 동작한다 (한자 200자 → 예산 23800, 필요 16200).
+ *
+ * 고정값(예: 4000)을 쓰면 한자 40자가 넘는 구절이 응답 중간에 잘린다.
+ */
+export function maxTokensFor(mode: Mode, hanjaCount: number): number {
+  const base = mode === 'deep' ? 2400 : 1800;
+  return Math.min(24000, Math.round(base + hanjaCount * 110));
+}
+
+/** UI 에 표시할 예상 비용(USD). 실제 과금은 응답의 usage 로 다시 계산한다. */
+export function predictCostUsd(mode: Mode, hanjaCount: number): number {
+  const model = mode === 'deep' ? MODEL_DEEP : MODEL_LIGHT;
+  const inputTokens = 2650; // 시스템 프롬프트 + 스키마 고정 오버헤드
+  const outputTokens = 1200 + 75 * hanjaCount;
+  return estimateCostUsd(model, inputTokens, outputTokens);
+}
 
 export function resolveModel(mode: Mode, env: Partial<Env>): string {
   if (mode === 'deep') return env.ANTHROPIC_MODEL_DEEP || MODEL_DEEP;

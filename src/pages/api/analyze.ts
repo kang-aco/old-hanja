@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import Anthropic from '@anthropic-ai/sdk';
 import {
   ANALYSIS_SCHEMA,
-  MAX_TOKENS,
+  maxTokensFor,
   SYSTEM_PROMPT,
   estimateCostUsd,
   hasHanja,
@@ -68,9 +68,22 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const db = env.DB;
 
   // ── 1) 캐시 조회 — 히트하면 API 비용 0 ──────────────────────────────────
-  const cached = db ? await getCachedAnalysis(db, textHash) : null;
+  // D1 이 없거나(바인딩 누락) 스키마가 안 들어가 있어도 분석 자체는 계속 되어야 한다.
+  // 캐시는 최적화일 뿐이므로 실패를 삼키고 캐시 미스로 취급한다.
+  let cached: Awaited<ReturnType<typeof getCachedAnalysis>> = null;
+  if (db) {
+    try {
+      cached = await getCachedAnalysis(db, textHash);
+    } catch {
+      cached = null;
+    }
+  }
   if (cached) {
-    if (db) await logSearch(db, textHash, text, true);
+    try {
+      await logSearch(db!, textHash, text, true);
+    } catch {
+      /* 기록 실패는 무시 */
+    }
     const meta: AnalyzeMeta = {
       model: cached.model,
       mode,
@@ -85,8 +98,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
   // ── 2) 일일 호출 상한 ────────────────────────────────────────────────────
   const cap = Number(env.MAX_DAILY_ANALYSES ?? DEFAULT_DAILY_CAP);
   if (db && Number.isFinite(cap) && cap > 0) {
-    const used = await todayApiCalls(db);
-    if (used >= cap) {
+    // 상한 조회가 실패하면(테이블 없음 등) 상한을 적용하지 않고 넘어간다.
+    let used: number | null = null;
+    try {
+      used = await todayApiCalls(db);
+    } catch {
+      used = null;
+    }
+    if (used !== null && used >= cap) {
       return json(
         {
           ok: false,
@@ -121,9 +140,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
   //  - sonnet-5: adaptive thinking 이 기본 ON 이라 명시적으로 끈다. 켜면 출력 토큰이 약 2배가 된다.
   //    구조화된 추출 작업이라 사고를 끄더라도 Haiku 대비 정확도 이득은 그대로 남는다.
   const isDeep = mode === 'deep';
+  // 출력 예산은 한자 수에 비례해서 잡는다. 고정값이면 긴 구절이 중간에 잘린다.
+  const hanjaCount = extractHanja(text).length;
   const params: Record<string, unknown> = {
     model,
-    max_tokens: MAX_TOKENS[mode],
+    max_tokens: maxTokensFor(mode, hanjaCount),
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: `[분석할 한문 구절]\n${text}` }],
     output_config: { format: { type: 'json_schema', schema: ANALYSIS_SCHEMA } },
@@ -151,7 +172,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
   if (message.stop_reason === 'max_tokens') {
     return json(
-      { ok: false, error: '구절이 너무 길어 분석이 중간에 끊겼습니다. 더 짧게 나눠 입력해 주세요.' },
+      {
+        ok: false,
+        code: 'truncated',
+        error:
+          `구절이 예상보다 길어 분석이 중간에 끊겼습니다 (한자 ${hanjaCount}자). ` +
+          '문장 단위로 나눠서 한 번에 40자 정도씩 입력하면 더 정확하고 저렴합니다.',
+      },
       502,
     );
   }
