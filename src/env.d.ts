@@ -12,6 +12,8 @@ interface Env {
   ANTHROPIC_MODEL?: string;
   /** 정밀 분석 모델 오버라이드. 기본값 claude-sonnet-5 */
   ANTHROPIC_MODEL_DEEP?: string;
+  /** 어순 재구성 교정에만 쓸 모델. 미설정 시 본 분석과 같은 모델을 쓴다 */
+  ANTHROPIC_MODEL_REPAIR?: string;
   /** 하루 최대 API 호출 수 (캐시 미스만 계산). 기본값 50 */
   MAX_DAILY_ANALYSES?: string;
 }

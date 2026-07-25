@@ -58,6 +58,17 @@ export function resolveModel(mode: Mode, env: Partial<Env>): string {
   return env.ANTHROPIC_MODEL || MODEL_LIGHT;
 }
 
+/**
+ * 어순 재구성 재생성(교정)에 쓸 모델.
+ *
+ * 기본값은 본 분석과 같은 모델이다. 교정만 더 좋은 모델로 올리는 실험을 위해
+ * ANTHROPIC_MODEL_REPAIR 로 따로 지정할 수 있게 열어 두었다. 기본값이 분석 모델과
+ * 같으므로, 이 값을 설정하지 않으면 동작이 달라지지 않는다.
+ */
+export function resolveRepairModel(analysisModel: string, env: Partial<Env>): string {
+  return env.ANTHROPIC_MODEL_REPAIR || analysisModel;
+}
+
 export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
   const p = PRICING[model] ?? PRICING['claude-haiku-4-5']!;
   return (inputTokens / 1_000_000) * p.input + (outputTokens / 1_000_000) * p.output;
