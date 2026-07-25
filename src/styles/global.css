@@ -328,6 +328,18 @@ button.primary:not(:disabled):hover {
   color: var(--ink-3);
   margin-top: 6px;
 }
+/* 문형 유형 / 허사 역할 배지 */
+.card h4 .ptype {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 2px 9px;
+  vertical-align: 3px;
+}
 .card .link {
   margin-top: 10px;
   font-size: 12px;
@@ -403,6 +415,19 @@ button.primary:not(:disabled):hover {
   font-size: 12px;
   color: var(--ink-2);
   line-height: 1.45;
+}
+.unit .role.none {
+  color: var(--ink-3);
+  background: #eee9dd;
+}
+/* 여러 품사로 쓰이는 글자의 코퍼스 비율 (예: 之 = 속격 62% · 대명사 41%) */
+.unit .amb {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px dashed var(--line);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--seal);
 }
 
 /* ── 플래시카드 ──────────────────────────────────────────────────────── */

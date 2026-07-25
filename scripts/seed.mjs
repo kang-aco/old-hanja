@@ -7,7 +7,14 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 const DB_NAME = 'hanmun-db';
-const FILES = ['radicals.sql', 'idioms.sql', 'characters.sql', 'passages.sql'];
+const FILES = [
+  'radicals.sql',
+  'idioms.sql',
+  'characters.sql',
+  'passages.sql',
+  'pos.sql',
+  'grammar.sql',
+];
 
 const remote = process.argv.includes('--remote');
 const target = remote ? '--remote' : '--local';

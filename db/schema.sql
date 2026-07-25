@@ -2,6 +2,10 @@
 -- 적용:  npm run db:migrate:local   /   npm run db:migrate
 -- 주의: 이 파일은 멱등(idempotent)하지 않습니다. 재실행 시 테이블을 지우고 다시 만듭니다.
 
+DROP TABLE IF EXISTS pos_chars;
+DROP TABLE IF EXISTS pos_patterns;
+DROP TABLE IF EXISTS function_words;
+DROP TABLE IF EXISTS sentence_patterns;
 DROP TABLE IF EXISTS analyses;
 DROP TABLE IF EXISTS search_logs;
 DROP TABLE IF EXISTS idioms;
@@ -83,7 +87,64 @@ CREATE INDEX idx_characters_eum     ON characters (eum);
 CREATE INDEX idx_characters_radical ON characters (radical);
 
 -- ─────────────────────────────────────────────────────────────────────────
--- 6. 고전 명구 (연관 문장 추천)
+-- 6-1. 한문 품사 (UD Classical Chinese · Kyoto 트리뱅크에서 생성)
+--      출처 표기 필수 · CC BY-SA 4.0. scripts/build-pos.mjs 로 생성한다.
+--      AI 없이 글자별 품사를 붙이기 위한 표. 조회 비용이 0 이다.
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE pos_chars (
+  hanja     TEXT PRIMARY KEY,
+  upos      TEXT NOT NULL,   -- 코퍼스에서 가장 흔한 품사 (NOUN/VERB/PART …)
+  pos_ko    TEXT NOT NULL,   -- 한국어 품사명 (명사/동사/어조사 …)
+  detail    TEXT,            -- 트리뱅크 세부 분류 (예: p,助詞,接続,属格)
+  gloss     TEXT,            -- 대표 뜻 (영문)
+  freq      INTEGER NOT NULL,-- 코퍼스 출현 횟수
+  dist_json TEXT             -- 품사 분포 JSON. 之·而 처럼 다의적인 글자를 드러낸다
+);
+CREATE INDEX idx_pos_chars_freq ON pos_chars (freq DESC);
+
+-- 6-2. 문형 패턴 (품사 2~3연속 n-gram)
+CREATE TABLE pos_patterns (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  pattern       TEXT NOT NULL UNIQUE,  -- 예: "NOUN VERB NOUN"
+  pattern_ko    TEXT NOT NULL,         -- 예: "명사+동사+명사"
+  n             INTEGER NOT NULL,      -- 2 또는 3
+  freq          INTEGER NOT NULL,
+  example       TEXT,                  -- 코퍼스 예시 구절
+  example_gloss TEXT                   -- 예시의 글자별 뜻
+);
+CREATE INDEX idx_pos_patterns_lookup ON pos_patterns (pattern);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 6-3. 허사(虛辭) 사전 — 직접 작성한 문법 지식
+--      pos_chars(코퍼스 통계)와 상호 보완한다. 통계는 "之가 속격 57% / 대명사 41%"
+--      까지만 알려 주지만, 여기에는 "어느 자리에 오면 무엇인지" 판별 규칙을 담는다.
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE function_words (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  hanja         TEXT NOT NULL UNIQUE,
+  role          TEXT NOT NULL,   -- 관형격조사 / 종결어기사 / 의문어기사 …
+  position_hint TEXT NOT NULL,   -- 위치에 따라 기능이 어떻게 갈리는지
+  example       TEXT,            -- 대표 예구
+  example_ko    TEXT             -- 예구의 풀이
+);
+
+-- 6-4. 정형 문형(定型 文型) — 是……也, 不亦……乎, 爲……所…… 같은 굳은 구문
+--      ……(U+2026 두 개)는 임의의 글자를 뜻하는 자리표다. 조회 시 정규식으로 바꿔 맞춘다.
+--      품사 n-gram 은 통계적 근사이지만 이쪽은 문자열이 정확히 일치해야 잡히므로
+--      오탐이 없다.
+CREATE TABLE sentence_patterns (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  pattern        TEXT NOT NULL UNIQUE,  -- 예: 不亦……乎
+  pattern_type   TEXT NOT NULL,         -- 판단문 / 의문문 / 피동문 / 사역문 …
+  explanation    TEXT NOT NULL,
+  example_hanja  TEXT,
+  example_korean TEXT,
+  priority       INTEGER NOT NULL DEFAULT 0  -- 클수록 먼저 보여 준다
+);
+CREATE INDEX idx_sentence_patterns_priority ON sentence_patterns (priority DESC);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 7. 고전 명구 (연관 문장 추천)
 -- ─────────────────────────────────────────────────────────────────────────
 CREATE TABLE passages (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,

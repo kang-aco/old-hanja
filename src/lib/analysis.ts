@@ -183,7 +183,5 @@ export function normalize(text: string): string {
     .trim();
 }
 
-/** 한자가 한 글자라도 들어 있는지 (CJK 통합 한자 + 확장 A + 호환 한자) */
-export function hasHanja(text: string): boolean {
-  return /[㐀-䶿一-鿿豈-﫿]/.test(text);
-}
+// 한자 판별은 src/lib/hanja.ts 한 곳에서만 정의한다 (범위 오류 재발 방지).
+export { hasHanja } from './hanja';

@@ -63,16 +63,21 @@ const EXAMPLES = [
     <!-- 탭 1: 구문독해 풀이 -->
     <div class="panel" id="panel-read">
       <div class="step">
-        <h3><span class="no">1</span> 어순 재구성</h3>
+        <h3><span class="no">1</span> 품사 태깅</h3>
+        <div class="breakdown" id="r-pos"></div>
+        <p class="empty" style="font-size:12px" id="r-pos-note"></p>
+      </div>
+      <div class="step">
+        <h3><span class="no">2</span> 어순 재구성</h3>
         <div class="card"><div class="render-line" id="r-order"></div></div>
         <p class="empty" style="font-size:12px">한자를 누르면 음·훈·부수·획수를 볼 수 있습니다.</p>
       </div>
       <div class="step">
-        <h3><span class="no">2</span> 현대어 해석</h3>
+        <h3><span class="no">3</span> 현대어 해석</h3>
         <div class="card"><div class="trans" id="r-korean"></div></div>
       </div>
       <div class="step">
-        <h3><span class="no">3</span> 영어 번역</h3>
+        <h3><span class="no">4</span> 영어 번역</h3>
         <div class="card"><div class="trans en" id="r-en-free"></div></div>
       </div>
     </div>
@@ -80,6 +85,27 @@ const EXAMPLES = [
     <!-- 탭 2: 번역 방법론 -->
     <div class="panel" id="panel-method" hidden>
       <div id="r-method"></div>
+      <div class="step" style="margin-top:24px">
+        <h3>정형 문형</h3>
+        <p class="empty" style="font-size:12px;margin-top:-4px">
+          是……也, 不亦……乎 처럼 굳어진 구문을 원문에서 그대로 찾아낸 결과입니다.
+        </p>
+        <div id="r-sentence-patterns"></div>
+      </div>
+      <div class="step">
+        <h3>허사 풀이</h3>
+        <p class="empty" style="font-size:12px;margin-top:-4px">
+          이 구절에 쓰인 기능어입니다. 자리에 따라 뜻이 갈리니 위치를 함께 보십시오.
+        </p>
+        <div id="r-function-words"></div>
+      </div>
+      <div class="step">
+        <h3>품사 배열 패턴</h3>
+        <p class="empty" style="font-size:12px;margin-top:-4px">
+          품사 배열을 한문 코퍼스(86,239문장)와 맞춰 본 통계입니다.
+        </p>
+        <div id="r-patterns"></div>
+      </div>
       <p class="chips-label" style="margin-top:22px">
         한문 번역 7단계 전체 방법론은 <a href="/method" style="color:var(--accent)">여기</a>에서 볼 수
         있습니다.
@@ -145,7 +171,7 @@ const EXAMPLES = [
   ];
 
   // ── 입력 ────────────────────────────────────────────────────────────
-  const HANJA_RE = /[㐀-䶿一-鿿豈-﫿]/;
+  const HANJA_RE = /[㐀-䶿一-鿿豈-﫿]/;
 
   // 실측 근사식과 동일: 출력 ≈ 700 + 15 × 한자수, 고정 입력 ≈ 1750 토큰
   function predictKrw(hanjaCount) {
@@ -247,7 +273,7 @@ const EXAMPLES = [
   // 텍스트 안의 한자를 클릭 가능한 조각으로 감싼다 (XSS 방지를 위해 먼저 escape)
   function linkifyHanja(s) {
     return esc(s).replace(
-      /[㐀-䶿一-鿿豈-﫿]/g,
+      /[㐀-䶿一-鿿豈-﫿]/g,
       (c) => `<b class="tap" data-hanja="${c}">${c}</b>`,
     );
   }
@@ -368,10 +394,99 @@ const EXAMPLES = [
     );
 
     loadRadicalCards(a.original || input.value);
+    loadPos(a.original || input.value);
     renderUsage(meta);
 
     result.hidden = false;
     selectTab('read');
+  }
+
+  // ── 품사 태깅 + 문형 패턴 (D1 기반 · LLM 비용 0) ────────────────────
+  async function loadPos(text) {
+    $('r-pos').innerHTML = '<p class="empty">품사를 붙이는 중…</p>';
+    $('r-patterns').innerHTML = '';
+    let d = null;
+    try {
+      const res = await fetch('/api/pos', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      d = await res.json();
+    } catch {
+      /* 무시 */
+    }
+    if (!d?.ok || !d.tokens?.length) {
+      $('r-pos').innerHTML = '<p class="empty">품사 정보를 찾지 못했습니다.</p>';
+      $('r-pos-note').textContent = '';
+      return;
+    }
+
+    $('r-pos').innerHTML = d.tokens
+      .map((t) => {
+        // 다의적인 글자는 분포를 함께 보여 준다 (예: 之 = 속격 조사 / 대명사)
+        const dist = t.ambiguous
+          ? `<div class="amb">${t.dist
+              .slice(0, 3)
+              .map((x) => `${esc(x.pos)} ${Math.round((x.n / t.freq) * 100)}%`)
+              .join(' · ')}</div>`
+          : '';
+        return `<div class="unit" data-hanja="${esc(t.hanja)}">
+          <div class="ch">${esc(t.hanja)}</div>
+          ${t.pos_ko ? `<div class="role">${esc(t.pos_ko)}</div>` : '<div class="role none">미수록</div>'}
+          ${t.gloss ? `<div class="gloss">${esc(t.gloss)}</div>` : ''}
+          ${dist}
+        </div>`;
+      })
+      .join('');
+    $('r-pos')
+      .querySelectorAll('.unit[data-hanja]')
+      .forEach((el) => el.addEventListener('click', () => openChar(el.dataset.hanja)));
+
+    const c = d.coverage;
+    $('r-pos-note').textContent =
+      `${c.known}/${c.total}자 수록 · 글자를 누르면 사전이 열립니다` +
+      ` · 여러 품사로 쓰이는 글자는 코퍼스 비율을 함께 표시합니다`;
+
+    // 정형 문형 — 원문에서 실제로 일치한 부분을 함께 보여 준다
+    $('r-sentence-patterns').innerHTML = (d.sentence_patterns ?? []).length
+      ? d.sentence_patterns
+          .map(
+            (p) => `<div class="card">
+              <h4><span class="hanja" style="font-size:19px">${esc(p.pattern)}</span>
+                <span class="ptype">${esc(p.pattern_type)}</span></h4>
+              <p>${esc(p.explanation)}</p>
+              <p class="meta">이 구절에서 <span class="hanja">${esc(p.matched_text)}</span>
+                ${p.example_hanja ? ` · 예 <span class="hanja">${esc(p.example_hanja)}</span> ${esc(p.example_korean ?? '')}` : ''}</p>
+            </div>`,
+          )
+          .join('')
+      : '<p class="empty">일치하는 정형 문형이 없습니다.</p>';
+
+    // 허사 풀이
+    $('r-function-words').innerHTML = (d.function_words ?? []).length
+      ? d.function_words
+          .map(
+            (w) => `<div class="card">
+              <h4><span class="hanja" style="font-size:24px">${esc(w.hanja)}</span>
+                <span class="ptype">${esc(w.role)}</span></h4>
+              <p>${esc(w.position_hint)}</p>
+              ${w.example ? `<p class="meta"><span class="hanja">${esc(w.example)}</span> — ${esc(w.example_ko ?? '')}</p>` : ''}
+            </div>`,
+          )
+          .join('')
+      : '<p class="empty">이 구절에는 등록된 허사가 없습니다.</p>';
+
+    $('r-patterns').innerHTML = (d.patterns ?? []).length
+      ? d.patterns
+          .map(
+            (p) => `<div class="card">
+              <h4>${esc(p.pattern_ko)}</h4>
+              <p class="meta">코퍼스 ${esc(p.freq)}회${p.example ? ` · 예 <span class="hanja">${esc(p.example)}</span> (${esc(p.example_gloss ?? '')})` : ''}</p>
+            </div>`,
+          )
+          .join('')
+      : '<p class="empty">일치하는 문형 패턴이 없습니다.</p>';
   }
 
   // ── 부수 플래시카드 (D1 기반 · LLM 비용 0) ──────────────────────────

@@ -5,7 +5,5 @@ export async function sha256(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** 문자열에서 한자만 추출 */
-export function extractHanja(text: string): string[] {
-  return [...text].filter((ch) => /[㐀-䶿一-鿿豈-﫿]/.test(ch));
-}
+// 한자 판별은 src/lib/hanja.ts 한 곳에서만 정의한다 (범위 오류 재발 방지).
+export { extractHanja } from './hanja';
