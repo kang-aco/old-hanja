@@ -6,6 +6,16 @@ interface Props {
   tagline?: string;
 }
 const { title = '한문독해', tagline = '한문을 영어 구문독해하듯 풀어보세요' } = Astro.props;
+
+const NAV = [
+  { href: '/', label: '구문독해' },
+  { href: '/curriculum', label: '커리큘럼' },
+  { href: '/dictionary', label: '부수 사전' },
+  { href: '/method', label: '번역 7단계' },
+];
+
+// 끝의 / 를 떼고 비교한다. /curriculum 과 /curriculum/ 이 둘 다 들어올 수 있다.
+const here = Astro.url.pathname.replace(/\/+$/, '') || '/';
 ---
 
 <!doctype html>
@@ -32,8 +42,18 @@ const { title = '한문독해', tagline = '한문을 영어 구문독해하듯 �
         <h1><a href="/">한문독해</a></h1>
         <p class="tagline">{tagline}</p>
         <nav>
-          <a href="/">구문독해</a> &nbsp;·&nbsp; <a href="/dictionary">부수 사전</a> &nbsp;·&nbsp;
-          <a href="/method">번역 7단계</a>
+          {
+            NAV.map((item, i) => (
+              <>
+                {i > 0 && <span class="nav-sep">&nbsp;·&nbsp;</span>}
+                {/* 지금 보고 있는 쪽을 표시한다. 항목이 넷으로 늘어나면서
+                    어디에 있는지가 링크만으로는 드러나지 않는다. */}
+                <a href={item.href} aria-current={item.href === here ? 'page' : undefined}>
+                  {item.label}
+                </a>
+              </>
+            ))
+          }
         </nav>
       </header>
 

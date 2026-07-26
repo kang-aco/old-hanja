@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 const DB_NAME = 'hanmun-db';
+// 순서가 중요하다. curriculum.sql 은 passages 행을 UPDATE 하므로 passages.sql 뒤에 와야 한다.
 const FILES = [
   'radicals.sql',
   'idioms.sql',
@@ -14,6 +15,7 @@ const FILES = [
   'passages.sql',
   'pos.sql',
   'grammar.sql',
+  'curriculum.sql',
 ];
 
 const remote = process.argv.includes('--remote');
