@@ -51,6 +51,43 @@ export function totalDeviation(diff: CountMismatch[]): number {
   return diff.reduce((sum, d) => sum + Math.abs(d.expected - d.got), 0);
 }
 
+export interface RepairVerdict {
+  /** 재생성 결과를 채택할지. 기준은 완전 일치가 아니라 "이탈도가 줄었는가" 이다 */
+  accepted: boolean;
+  /** 채택 후에도 남은 어긋남이 없는지 */
+  exact: boolean;
+  before: number;
+  after: number;
+}
+
+/**
+ * 재생성 결과를 받아들일지 판정한다.
+ *
+ * 완전 일치만 받아들이면 之 를 2→4 로 틀린 것을 2→3 으로 줄인 재생성이 버려진다.
+ * 어긋난 "글자 종류 수"로 비교해도 마찬가지로 1 대 1 이 되어 부분 개선을 놓친다.
+ * 그래서 이탈도 총량이 줄었는지만 본다. 완전히 맞은 결과는 0 < n 으로 자연히 채택된다.
+ */
+export function judgeRepair(before: CountMismatch[], after: CountMismatch[]): RepairVerdict {
+  const b = totalDeviation(before);
+  const a = totalDeviation(after);
+  return { accepted: a < b, exact: a === 0, before: b, after: a };
+}
+
+/**
+ * 남은 어긋남을 사용자에게 알리는 문구. 완전히 맞으면 null.
+ *
+ * 부분 개선된 결과도 버리지 않고 보여 주므로, 화면에 나온 재구성이 아직 원문과
+ * 다를 수 있다는 사실을 문구로 분명히 밝힌다.
+ */
+export function reconstructionWarning(diff: CountMismatch[], improved: boolean): string | null {
+  if (diff.length === 0) return null;
+  const detail = describeDiff(diff);
+  const tail = '다른 항목은 정상이며, 정밀 분석을 켜면 더 정확해집니다.';
+  return improved
+    ? `어순 재구성을 교정해 원문과의 차이를 줄였지만 아직 다른 부분이 남아 있습니다. ${detail}. ${tail}`
+    : `어순 재구성에 원문과 다른 한자가 섞여 있습니다. ${detail}. ${tail}`;
+}
+
 /** 원문의 글자 구성표 — 재생성 시 맞춰야 할 목표를 명시적으로 알려 준다 */
 export function inventory(original: string): string {
   const src = tally(original);

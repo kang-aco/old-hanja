@@ -18,6 +18,8 @@ import { extractHanja, sha256 } from '../../lib/hash';
 import {
   REPAIR_SCHEMA,
   hanjaCountDiff,
+  judgeRepair,
+  reconstructionWarning,
   repairPrompt,
   totalDeviation,
   type CountMismatch,
@@ -295,10 +297,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
           .word_order_reconstruction;
         if (fixed) {
           const after = hanjaCountDiff(text, fixed);
-          repairInfo.after = totalDeviation(after);
-          // 수용 기준은 일단 그대로 둔다. 완전히 맞은 재생성은 0 < 1 로 수용되므로
-          // 프롬프트 개선만 따로 측정할 수 있다.
-          if (after.length < diff.length) {
+          // 수용 기준은 완전 일치가 아니라 이탈도 감소다. 之 를 2→4 로 틀린 것을
+          // 2→3 으로 줄인 재생성은 아직 맞지 않아도 이전보다 나으므로 받아들인다.
+          const verdict = judgeRepair(diff, after);
+          repairInfo.after = verdict.after;
+          if (verdict.accepted) {
             analysis.word_order_reconstruction = fixed;
             diff = after;
             repairInfo.accepted = true;
@@ -309,12 +312,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
       /* 재생성 실패는 원래 결과를 그대로 두고 경고만 붙인다 */
     }
 
-    if (diff.length > 0) {
-      warnings.push(
-        '어순 재구성에 원문과 다른 한자가 섞여 있습니다. 다른 항목은 정상이며, ' +
-          '정밀 분석을 켜면 더 정확해집니다.',
-      );
-    }
+    // 부분적으로만 개선된 결과도 버리지 않고 그대로 보여 준다. 대신 어디가 아직
+    // 원문과 다른지 문구로 밝혀, 사용자가 그 부분만 걸러 읽을 수 있게 한다.
+    const warning = reconstructionWarning(diff, repairInfo.accepted);
+    if (warning) warnings.push(warning);
   }
 
   const meta: AnalyzeMeta = {
