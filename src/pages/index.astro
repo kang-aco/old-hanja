@@ -46,6 +46,59 @@ const EXAMPLES = [
 
   <div class="alert" id="alert" hidden></div>
 
+  <!--
+    먼저 풀어보기 — 커리큘럼에서 /?practice=<구절> 로 들어왔을 때만 뜬다.
+    분석 결과는 이미 받아 두었지만 화면에 넣지 않고 붙들고 있다가, 사용자가
+    자기 답을 낸 뒤에야 아래 #result 를 공개한다.
+  -->
+  <section id="practice" hidden>
+    <div class="result-head">
+      <div class="original hanja" id="p-original"></div>
+      <div class="eum" id="p-eum"></div>
+      <div id="p-source-wrap"><span class="source" id="p-source"></span></div>
+    </div>
+
+    <div class="step">
+      <h3><span class="no">?</span> 먼저 스스로 풀어보기</h3>
+      <p class="empty" style="font-size:12px;margin-top:-4px">
+        분석은 이미 준비돼 있습니다. 답을 적고 나면 정답과 나란히 볼 수 있습니다.
+      </p>
+      <div class="practice-box">
+        <textarea
+          id="p-input"
+          rows="3"
+          maxlength="300"
+          placeholder="이 구절을 현대 한국어로 옮겨 보세요"
+          aria-label="현대어 해석 입력"></textarea>
+        <div class="row">
+          <button type="button" class="link" id="p-skip">모르겠어요 · 바로 정답 보기</button>
+          <button type="button" class="primary" id="p-submit">답 맞춰보기</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="p-compare" hidden>
+      <div class="step">
+        <h3>내가 쓴 해석</h3>
+        <div class="card"><div class="trans" id="p-mine"></div></div>
+      </div>
+      <div class="step">
+        <h3>정답</h3>
+        <div class="card"><div class="trans" id="p-answer"></div></div>
+      </div>
+      <div class="step">
+        <h3>스스로 채점</h3>
+        <p class="empty" style="font-size:12px;margin-top:-4px">
+          표현이 달라도 뜻이 통하면 맞은 것입니다. 채점은 진도에만 쓰이고 서버로 가지 않습니다.
+        </p>
+        <div class="row grade-row">
+          <button type="button" class="primary" id="p-correct">뜻이 통했어요</button>
+          <button type="button" class="chip" id="p-wrong">틀렸어요</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="result" hidden>
     <div class="result-head">
       <div class="original hanja" id="r-original"></div>
@@ -145,6 +198,8 @@ const EXAMPLES = [
 
 <script>
   // @ts-nocheck — 브라우저 스프링클 JS. 서버 코드(src/lib, src/pages/api)는 strict 로 검사됩니다.
+  import { markDone } from '../lib/progress';
+
   const $ = (id) => document.getElementById(id);
   const esc = (s) =>
     String(s ?? '').replace(
@@ -159,9 +214,16 @@ const EXAMPLES = [
   const loadingMsg = $('loading-msg');
   const alertBox = $('alert');
   const result = $('result');
+  const practice = $('practice');
 
   let busy = false;
   let loadTimer = null;
+
+  // ── 먼저 풀어보기 상태 ───────────────────────────────────────────────
+  // 분석 응답을 화면에 넣지 않고 여기 붙들어 둔다. render() 를 부르는 순간
+  // #result 가 열려 답이 다 보이므로, 공개 시점을 늦추는 것이 이 기능의 전부다.
+  let pending = null; // { analysis, meta, extras, warnings }
+  let practicePassage = null; // 진도 기록에 쓸 구절 문자열 (커리큘럼의 것과 같아야 한다)
 
   const LOAD_MSGS = [
     '구절을 분해하는 중…',
@@ -215,7 +277,10 @@ const EXAMPLES = [
   go.addEventListener('click', () => analyze());
 
   // ── 분석 ────────────────────────────────────────────────────────────
-  async function analyze(text) {
+  // opts.practice 를 켜면 결과를 바로 그리지 않고 "먼저 풀어보기"로 넘긴다.
+  // 인자를 뒤에 덧붙였으므로 기존 호출부(예시 칩·최근 검색·연관 명구·버튼)는
+  // 그대로 두어도 동작이 달라지지 않는다.
+  async function analyze(text, opts = {}) {
     if (busy) return;
     const value = (text ?? input.value).trim();
     if (!value) {
@@ -229,6 +294,7 @@ const EXAMPLES = [
     go.disabled = true;
     alertBox.hidden = true;
     result.hidden = true;
+    practice.hidden = true;
     startLoading();
 
     try {
@@ -242,7 +308,11 @@ const EXAMPLES = [
         showAlert(data.error ?? '분석에 실패했습니다.');
         return;
       }
-      render(data.analysis, data.meta, data.extras, data.warnings);
+      if (opts.practice) {
+        startPractice(data, opts.passage ?? value);
+      } else {
+        render(data.analysis, data.meta, data.extras, data.warnings);
+      }
       loadRecent();
     } catch (err) {
       showAlert('네트워크 오류가 발생했습니다. 다시 시도해 주세요.');
@@ -252,6 +322,79 @@ const EXAMPLES = [
       go.disabled = false;
     }
   }
+
+  // ── 먼저 풀어보기 ───────────────────────────────────────────────────
+
+  /** 분석은 받아 두고 화면에는 원문·음·출전까지만 내보낸다. */
+  function startPractice(data, passage) {
+    pending = data;
+    practicePassage = passage;
+
+    const a = data.analysis ?? {};
+    $('p-original').textContent = a.original || passage;
+    $('p-eum').textContent = a.eum || '';
+
+    // 출전은 힌트가 되지만 뜻을 알려 주지는 않으므로 미리 보여 준다.
+    const sg = a.source_guess ?? {};
+    const hasSource = sg.book && sg.book !== '미상' && sg.confidence !== 'unknown';
+    $('p-source-wrap').hidden = !hasSource;
+    if (hasSource) {
+      $('p-source').textContent = `출전 · ${sg.book}${sg.chapter ? ' ' + sg.chapter : ''}`;
+    }
+
+    $('p-input').value = '';
+    $('p-compare').hidden = true;
+    practice.hidden = false;
+    $('p-input').focus();
+    practice.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /** 내 답과 정답을 나란히 놓는다. 채점은 사용자가 한다(AI 채점 없음 = 비용 0). */
+  function showCompare() {
+    const mine = $('p-input').value.trim();
+    if (!mine) {
+      showAlert('해석을 입력한 뒤 눌러 주세요. 모르겠으면 "바로 정답 보기"를 누르세요.');
+      return;
+    }
+    alertBox.hidden = true;
+    $('p-mine').textContent = mine;
+    $('p-answer').textContent = pending?.analysis?.modern_korean || '—';
+    $('p-compare').hidden = false;
+    $('p-compare').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /**
+   * 붙들고 있던 분석을 공개한다.
+   * done 이 null 이면 진도를 건드리지 않는다 — 정답을 바로 본 경우가 그렇다.
+   */
+  function revealAnalysis(done) {
+    if (!pending) return;
+    if (done !== null && practicePassage) markDone(practicePassage, done);
+
+    practice.hidden = true;
+    render(pending.analysis, pending.meta, pending.extras, pending.warnings);
+    pending = null;
+
+    // 주소에서 practice 를 뗀다. 이것을 남겨 두면 새로고침할 때마다 이미 푼
+    // 구절을 다시 묻는다. 뒤로 가기 기록은 늘리지 않도록 replaceState 를 쓴다.
+    try {
+      const u = new URL(location.href);
+      if (u.searchParams.has('practice')) {
+        u.searchParams.delete('practice');
+        history.replaceState(null, '', u.pathname + u.search);
+      }
+    } catch {
+      /* 무시 */
+    }
+  }
+
+  $('p-submit').addEventListener('click', showCompare);
+  $('p-skip').addEventListener('click', () => revealAnalysis(null));
+  $('p-correct').addEventListener('click', () => revealAnalysis(true));
+  $('p-wrong').addEventListener('click', () => revealAnalysis(false));
+  $('p-input').addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') showCompare();
+  });
 
   function startLoading() {
     let i = 0;
@@ -705,4 +848,20 @@ const EXAMPLES = [
     }
   }
   loadRecent();
+
+  // ── 커리큘럼에서 넘어온 경우 ────────────────────────────────────────
+  // /?practice=<구절> 로 들어오면 곧바로 연습 모드로 시작한다.
+  // 진도 기록의 열쇠는 커리큘럼이 건 문자열 그대로여야 하므로 따로 넘긴다.
+  (function bootPractice() {
+    let target = null;
+    try {
+      target = new URL(location.href).searchParams.get('practice');
+    } catch {
+      return;
+    }
+    if (!target) return;
+    const passage = target.trim();
+    if (!passage) return;
+    analyze(passage, { practice: true, passage });
+  })();
 </script>

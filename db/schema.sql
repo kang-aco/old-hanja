@@ -144,8 +144,11 @@ CREATE TABLE sentence_patterns (
 CREATE INDEX idx_sentence_patterns_priority ON sentence_patterns (priority DESC);
 
 -- ─────────────────────────────────────────────────────────────────────────
--- 7. 고전 명구 (연관 문장 추천)
+-- 7. 고전 명구 (연관 문장 추천 + 커리큘럼 연습 구절)
 -- ─────────────────────────────────────────────────────────────────────────
+-- 난이도 세 컬럼은 커리큘럼 기능이 쓴다. 기존 DB 에는 db/migrations/001-curriculum.sql
+-- 로 따로 추가하며, 이 파일로 새로 만든 DB 에는 처음부터 들어 있으므로 그 마이그레이션이
+-- 필요 없다. 값은 db/seed/curriculum.sql (scripts/build-curriculum.mjs 생성) 이 채운다.
 CREATE TABLE passages (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   passage        TEXT NOT NULL,
@@ -154,7 +157,11 @@ CREATE TABLE passages (
   chapter        TEXT,                -- 편/장
   modern_korean  TEXT NOT NULL,
   english        TEXT,
-  keywords       TEXT
+  keywords       TEXT,
+  difficulty       INTEGER,           -- 1~5. NULL 이면 커리큘럼 목록에서 빠진다
+  hanja_count      INTEGER,           -- 구절의 한자 수 (표시·정렬용)
+  curriculum_order INTEGER            -- 같은 난이도 안에서의 학습 순서
 );
-CREATE INDEX idx_passages_keywords ON passages (keywords);
-CREATE INDEX idx_passages_source   ON passages (source);
+CREATE INDEX idx_passages_keywords   ON passages (keywords);
+CREATE INDEX idx_passages_source     ON passages (source);
+CREATE INDEX idx_passages_difficulty ON passages (difficulty, curriculum_order);

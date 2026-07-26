@@ -137,6 +137,54 @@ export async function findPassages(
   return results ?? [];
 }
 
+// ── 커리큘럼 ────────────────────────────────────────────────────────────────
+
+export interface CurriculumRow {
+  id: number;
+  passage: string;
+  eum: string | null;
+  source: string;
+  chapter: string | null;
+  difficulty: number;
+  hanja_count: number | null;
+  curriculum_order: number | null;
+}
+
+/**
+ * 난이도순 연습 구절 목록.
+ *
+ * ※ modern_korean(정답 해석)을 일부러 빼고 읽는다.
+ * 이 목록은 커리큘럼 페이지에서 서버 렌더링되므로, 넣으면 정답이 HTML 소스에
+ * 그대로 실려 나간다. "먼저 스스로 풀어본다"는 기능의 전제가 깨진다.
+ * 정답은 사용자가 답을 제출한 뒤 /api/analyze 응답으로 받는다.
+ *
+ * difficulty 가 NULL 인 행은 아직 등급이 없는 구절이므로 목록에서 제외한다.
+ * 정렬은 idx_passages_difficulty (difficulty, curriculum_order) 를 그대로 탄다.
+ */
+export async function listCurriculum(
+  db: D1Database,
+  difficulty?: number,
+): Promise<CurriculumRow[]> {
+  const cols = `id, passage, eum, source, chapter, difficulty, hanja_count, curriculum_order`;
+  const stmt =
+    difficulty === undefined
+      ? db
+          .prepare(
+            `SELECT ${cols} FROM passages
+              WHERE difficulty IS NOT NULL
+              ORDER BY difficulty ASC, curriculum_order ASC, id ASC`,
+          )
+      : db
+          .prepare(
+            `SELECT ${cols} FROM passages
+              WHERE difficulty = ?
+              ORDER BY curriculum_order ASC, id ASC`,
+          )
+          .bind(difficulty);
+  const { results } = await stmt.all<CurriculumRow>();
+  return results ?? [];
+}
+
 export interface CharacterRow {
   hanja: string;
   eum: string;

@@ -1,0 +1,127 @@
+---
+import Base from '../layouts/Base.astro';
+import { listCurriculum } from '../lib/db';
+
+export const prerender = false;
+
+const db = Astro.locals.runtime?.env?.DB;
+const items = db ? await listCurriculum(db) : [];
+
+/** 등급 이름. 숫자만 보이면 무엇이 어떻게 어려운지 알 수 없어 한 줄 설명을 붙인다. */
+const LEVELS: Record<number, { name: string; hint: string }> = {
+  1: { name: '입문', hint: '네 글자 안팎의 짧은 구절. 허사가 거의 없습니다.' },
+  2: { name: '기초', hint: '글자는 낯설어도 구조가 단순하거나 같은 짜임이 되풀이됩니다.' },
+  3: { name: '중급', hint: '之·而·於 같은 허사가 섞이고 두 절이 짝을 이룹니다.' },
+  4: { name: '상급', hint: '절이 길고 허사가 여럿이라 어순을 되짚어야 합니다.' },
+  5: { name: '심화', hint: '대구와 정형 문형이 겹칩니다. 한 번에 읽히지 않는 것이 정상입니다.' },
+};
+
+// 난이도별로 묶기 (listCurriculum 이 이미 정렬해 주므로 순서를 그대로 쓴다)
+const groups = new Map<number, typeof items>();
+for (const it of items) {
+  const list = groups.get(it.difficulty) ?? [];
+  list.push(it);
+  groups.set(it.difficulty, list);
+}
+const ordered = [...groups.entries()].sort((a, b) => a[0] - b[0]);
+---
+
+<Base title="커리큘럼 — 한문독해" tagline="쉬운 구절부터 차례로 풀어 보세요">
+  {
+    items.length === 0 ? (
+      <div class="alert">
+        연습 구절이 아직 없습니다. <code>npm run db:reset:local</code> 로 스키마와 시드를 넣은 뒤,
+        기존 DB 라면 <code>db/migrations/001-curriculum.sql</code> 도 함께 적용해 주세요.
+      </div>
+    ) : (
+      <>
+        <p class="chips-label">
+          전체 {items.length}구절 · 구절을 누르면 먼저 스스로 풀어본 뒤 분석을 봅니다
+        </p>
+
+        <div class="cur-summary" id="cur-summary" hidden>
+          <span id="cur-summary-text"></span>
+          <button type="button" class="link" id="cur-reset">진도 초기화</button>
+        </div>
+
+        {ordered.map(([level, list]) => (
+          <section class="cur-level" data-level={level}>
+            <div class="cur-head">
+              <span class="cur-badge">{level}단계</span>
+              <span class="cur-name">{LEVELS[level]?.name ?? ''}</span>
+              <span class="cur-count" data-level-count={level} />
+            </div>
+            <p class="cur-hint">{LEVELS[level]?.hint ?? ''}</p>
+
+            <div class="cur-grid">
+              {list.map((it) => (
+                <a
+                  class="cur-cell"
+                  href={`/?practice=${encodeURIComponent(it.passage)}`}
+                  data-passage={it.passage}
+                >
+                  <span class="cur-check" aria-hidden="true" />
+                  <div class="cur-passage hanja">{it.passage}</div>
+                  {it.eum && <div class="cur-eum">{it.eum}</div>}
+                  <div class="cur-meta">
+                    {it.source}
+                    {it.chapter ? ` ${it.chapter}` : ''} · {it.hanja_count}자
+                  </div>
+                </a>
+              ))}
+            </div>
+          </section>
+        ))}
+      </>
+    )
+  }
+</Base>
+
+<script>
+  // @ts-nocheck — 브라우저 스프링클 JS. 서버 코드(src/lib, src/pages/api)는 strict 로 검사됩니다.
+  import { readProgress, isDone, clearProgress } from '../lib/progress';
+
+  // 진도는 localStorage 에만 있으므로 서버 렌더링 결과에는 반영될 수 없다.
+  // 그래서 완료 표시는 페이지가 뜬 뒤 여기서 입힌다.
+  function paint() {
+    const p = readProgress();
+    const cells = [...document.querySelectorAll('.cur-cell[data-passage]')];
+    if (cells.length === 0) return;
+
+    let doneTotal = 0;
+    for (const cell of cells) {
+      const done = isDone(p, cell.dataset.passage);
+      cell.classList.toggle('done', done);
+      cell.setAttribute('aria-label', `${cell.dataset.passage}${done ? ' (완료)' : ''}`);
+      if (done) doneTotal++;
+    }
+
+    // 단계별 진행 수
+    document.querySelectorAll('.cur-level[data-level]').forEach((sec) => {
+      const list = [...sec.querySelectorAll('.cur-cell[data-passage]')];
+      const n = list.filter((c) => c.classList.contains('done')).length;
+      const slot = sec.querySelector('[data-level-count]');
+      if (slot) slot.textContent = `${n} / ${list.length}`;
+    });
+
+    const summary = document.getElementById('cur-summary');
+    const text = document.getElementById('cur-summary-text');
+    if (summary && text) {
+      // 한 건도 안 풀었으면 0/40 을 들이밀지 않는다. 시작 전에는 없는 편이 깔끔하다.
+      summary.hidden = doneTotal === 0;
+      text.textContent = `전체 ${cells.length}구절 중 ${doneTotal}구절 완료`;
+    }
+  }
+
+  document.getElementById('cur-reset')?.addEventListener('click', () => {
+    if (!confirm('풀이 진도를 모두 지웁니다. 되돌릴 수 없습니다.')) return;
+    clearProgress();
+    paint();
+  });
+
+  paint();
+
+  // 뒤로가기로 돌아오면 bfcache 때문에 스크립트가 다시 돌지 않는다.
+  // 방금 푼 구절이 완료로 안 보이면 진도가 저장되지 않은 것처럼 느껴지므로 다시 칠한다.
+  window.addEventListener('pageshow', paint);
+</script>

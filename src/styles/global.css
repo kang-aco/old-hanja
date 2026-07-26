@@ -75,6 +75,12 @@ header.site nav a {
 header.site nav a:hover {
   color: var(--accent);
 }
+/* 현재 쪽 — 색만으로 구분하지 않도록 밑줄도 함께 진하게 한다 */
+header.site nav a[aria-current='page'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
 
 /* ── 입력 ────────────────────────────────────────────────────────────── */
 .composer {
@@ -813,4 +819,197 @@ footer.site {
 }
 .search-bar input:focus {
   border-color: var(--accent);
+}
+
+/* ── 커리큘럼 (curriculum.astro) ─────────────────────────────────────────── */
+
+/* display 를 주면 hidden 속성이 먹지 않는다. .panel 과 같은 이유로 따로 되돌린다. */
+.cur-summary[hidden] {
+  display: none;
+}
+.cur-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper-2);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.cur-summary .link {
+  font-size: 12px;
+  color: var(--ink-3);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+.cur-summary .link:hover {
+  color: var(--accent);
+}
+
+.cur-level {
+  margin-top: 28px;
+}
+.cur-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.cur-badge {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--paper-2);
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+.cur-name {
+  font-family: var(--serif);
+  font-size: 16px;
+  color: var(--ink);
+}
+/* 완료 수는 진도가 있을 때만 채워지므로, 비어 있어도 자리를 잡지 않게 둔다 */
+.cur-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.cur-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.cur-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.cur-cell {
+  position: relative;
+  display: block;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 12px 10px;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+.cur-cell:hover {
+  border-color: var(--accent);
+}
+.cur-passage {
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--ink);
+  word-break: keep-all;
+}
+.cur-eum {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.cur-meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* 완료 표시 — 색만으로 구분하면 색각 이상에서 안 보이므로 체크 표시를 함께 쓴다 */
+.cur-cell.done {
+  border-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 6%, var(--paper-2));
+}
+.cur-check {
+  display: none;
+}
+.cur-cell.done .cur-check {
+  display: block;
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-size: 12px;
+  color: var(--ok);
+}
+.cur-cell.done .cur-check::before {
+  content: '✓ 완료';
+}
+
+/* ── 먼저 풀어보기 (index.astro #practice) ───────────────────────────────── */
+
+/* 입력 상자는 위쪽 composer 와 같은 결로 두되, 답을 쓰는 칸이므로 한글 본문 크기로 */
+.practice-box {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-top: 10px;
+}
+.practice-box textarea {
+  width: 100%;
+  min-height: 76px;
+  resize: vertical;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+.practice-box textarea::placeholder {
+  color: #b8b0a1;
+}
+.practice-box .row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+/* 건너뛰기는 왼쪽 끝으로 밀어 두 버튼의 무게를 다르게 한다 */
+.practice-box .link {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--ink-3);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.practice-box .link:hover {
+  color: var(--accent);
+}
+
+/* 채점 버튼 — 자기채점이므로 어느 쪽도 나무라는 인상이 되지 않게 나란히 둔다 */
+.grade-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.grade-row .chip {
+  padding: 10px 18px;
+  font-family: var(--sans);
+  font-size: 14px;
+}
+
+/* 물음표 단계 표시 — #result 의 숫자 배지와 같은 모양을 쓰되 숫자가 아니다 */
+#practice .step h3 .no {
+  background: var(--ink-3);
 }
