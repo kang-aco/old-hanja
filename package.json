@@ -6,6 +6,7 @@
   "description": "한문독해 — 한문 구절을 영어 구문독해 방식으로 풀어주는 학습 앱",
   "scripts": {
     "dev": "astro dev",
+    "test": "vitest run",
     "build": "astro build",
     "preview": "wrangler pages dev ./dist",
     "check": "astro check",
@@ -26,6 +27,7 @@
     "@astrojs/check": "^0.9.9",
     "@cloudflare/workers-types": "^5.20260722.1",
     "typescript": "^5.9.0",
+    "vitest": "^4.1.10",
     "wrangler": "^4.114.0"
   }
 }
