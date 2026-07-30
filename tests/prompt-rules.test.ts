@@ -14,13 +14,8 @@
  * 있었는지"를 확인하고 지우십시오 — 위 之 사례가 그렇게 사라졌다.
  */
 import { describe, it, expect } from 'vitest';
-import {
-  SYSTEM_PROMPT,
-  ANALYSIS_SCHEMA,
-  ANALYSIS_VERSION,
-  maxTokensFor,
-  predictCostUsd,
-} from '../src/lib/analysis';
+import { ANALYSIS_VERSION, maxTokensFor, predictCostUsd } from '../src/lib/analysis';
+import { SYSTEM_PROMPT, ANALYSIS_SCHEMA } from '../src/lib/prompt';
 import { HANJA_CLASS } from '../src/lib/hanja';
 import { hanjaCountDiff } from '../src/lib/validate';
 

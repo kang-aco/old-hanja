@@ -1,10 +1,7 @@
 import type { APIRoute } from 'astro';
 import Anthropic from '@anthropic-ai/sdk';
 import {
-  ANALYSIS_SCHEMA,
   ANALYSIS_VERSION,
-  maxTokensFor,
-  SYSTEM_PROMPT,
   estimateCostUsd,
   hasHanja,
   normalize,
@@ -14,6 +11,7 @@ import {
   type AnalyzeMeta,
   type Mode,
 } from '../../lib/analysis';
+import { buildAnalysisRequest } from '../../lib/prompt';
 import { extractHanja, sha256 } from '../../lib/hash';
 import {
   REPAIR_SCHEMA,
@@ -175,20 +173,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const model = resolveModel(mode, env);
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
-  // 비용 최적화 — 두 모드 모두 사고(thinking) 토큰을 쓰지 않는다.
-  //  - haiku-4-5: thinking / effort 파라미터 자체를 지원하지 않으므로 보내지 않는다.
-  //  - sonnet-5: adaptive thinking 이 기본 ON 이라 명시적으로 끈다. 켜면 출력 토큰이 약 2배가 된다.
-  //    구조화된 추출 작업이라 사고를 끄더라도 Haiku 대비 정확도 이득은 그대로 남는다.
-  const isDeep = mode === 'deep';
-  // 출력 예산은 한자 수에 비례해서 잡는다 (hanjaCount 는 위에서 계산). 고정값이면 긴 구절이 잘린다.
-  const params: Record<string, unknown> = {
-    model,
-    max_tokens: maxTokensFor(mode, hanjaCount),
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: `[분석할 한문 구절]\n${text}` }],
-    output_config: { format: { type: 'json_schema', schema: ANALYSIS_SCHEMA } },
-  };
-  if (isDeep) params.thinking = { type: 'disabled' };
+  // 프롬프트·스키마·출력 예산·thinking 분기는 모두 buildAnalysisRequest 안에 있다.
+  // 그 함수는 네트워크를 건드리지 않는 순수 함수라 API 호출 없이 테스트로 고정된다
+  // (tests/prompt.test.ts, tests/__snapshots__/request-*.txt).
+  const params = buildAnalysisRequest({ text, mode }, model);
 
   let message: Anthropic.Message;
   try {

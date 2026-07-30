@@ -10,11 +10,11 @@
  * 코드에서 떴다. 리팩터링 커밋의 diff 에 스냅숏 변경이 한 줄도 없으면 요청이
  * 동일하다는 뜻이다.
  *
- * ── 이 커밋 시점의 구현 ────────────────────────────────────────────────────
- * 지금은 `src/pages/api/analyze.ts` 가 하는 조립을 아래에 그대로 베껴 두었다.
- * 리팩터링 커밋에서 이 부분만 `buildAnalysisRequest()` 호출로 바꾼다.
- * 베낀 원본은 analyze.ts 의 다음 다섯 줄이다 (model / max_tokens / system /
- * messages / output_config) 와 deep 모드의 thinking 분기.
+ * ── 분리 전후 ──────────────────────────────────────────────────────────────
+ * 기준선을 뜬 커밋(e10bd71)에서는 `analyze.ts` 의 조립 다섯 줄(model / max_tokens /
+ * system / messages / output_config)과 deep 모드의 thinking 분기를 이 파일에 그대로
+ * 베껴 두었다. 지금은 그 자리에 `buildAnalysisRequest()` 호출만 있다.
+ * 스냅숏이 그대로라는 것이 곧 요청이 바뀌지 않았다는 증명이다.
  *
  * ── 스냅숏을 고칠 때 ───────────────────────────────────────────────────────
  * 프롬프트를 의도적으로 바꿨다면 스냅숏이 깨지는 것이 정상이다. `npm test -- -u` 로
@@ -22,16 +22,11 @@
  * 구절은 낡은 캐시가 영구히 서빙된다. 실제로 그 일이 있었다.
  */
 import { describe, it, expect } from 'vitest';
-import { createHash } from 'node:crypto';
-import {
-  ANALYSIS_SCHEMA,
-  SYSTEM_PROMPT,
-  maxTokensFor,
-  normalize,
-  resolveModel,
-  type Mode,
-} from '../src/lib/analysis';
-import { extractHanja } from '../src/lib/hanja';
+import { normalize, resolveModel, type Mode } from '../src/lib/analysis';
+import { buildAnalysisRequest } from '../src/lib/prompt';
+// 해시는 제품 코드와 같은 구현을 쓴다. node:crypto 를 쓰면 tsconfig 의 types 에
+// @types/node 가 없어 astro check 가 실패한다 (Workers 런타임에도 없는 모듈이다).
+import { sha256 } from '../src/lib/hash';
 
 // ── 고정 입력 ────────────────────────────────────────────────────────────────
 
@@ -46,28 +41,13 @@ const 구절 = {
 
 const 모드: Mode[] = ['light', 'deep'];
 
-// ── 리팩터링 전 조립 코드 (analyze.ts 에서 그대로 베낌) ──────────────────────
+// ── 조립 ─────────────────────────────────────────────────────────────────────
 
-/**
- * analyze.ts:184-191 과 같은 형태로 요청 파라미터를 만든다.
- * 키 순서까지 그대로 유지한다 — 스냅숏이 키 순서 변화도 잡게 하기 위해서다.
- */
-function 조립(text: string, mode: Mode, model: string): Record<string, unknown> {
-  const hanjaCount = extractHanja(text).length;
-  const params: Record<string, unknown> = {
-    model,
-    max_tokens: maxTokensFor(mode, hanjaCount),
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: `[분석할 한문 구절]\n${text}` }],
-    output_config: { format: { type: 'json_schema', schema: ANALYSIS_SCHEMA } },
-  };
-  if (mode === 'deep') params.thinking = { type: 'disabled' };
-  return params;
-}
+/** 분리 후에는 제품 코드와 완전히 같은 경로를 쓴다. analyze.ts 도 이 함수만 부른다. */
+const 조립 = (text: string, mode: Mode, model: string) =>
+  buildAnalysisRequest({ text, mode }, model);
 
 // ── 직렬화 ───────────────────────────────────────────────────────────────────
-
-const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
 
 /**
  * 사람이 읽을 수 있게 펼쳐 적는다. JSON.stringify 한 줄로 두면 diff 가 전부
@@ -75,7 +55,7 @@ const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex
  *
  * keys 줄을 넣는 이유: 키 순서와 키 집합의 변화를 눈에 보이게 하려는 것이다.
  */
-function 직렬화(params: Record<string, unknown>): string {
+async function 직렬화(params: Record<string, unknown>): Promise<string> {
   const system = params.system as string;
   const messages = params.messages as { role: string; content: string }[];
   const lines = [
@@ -84,7 +64,7 @@ function 직렬화(params: Record<string, unknown>): string {
     `max_tokens: ${params.max_tokens}`,
     `thinking: ${params.thinking ? JSON.stringify(params.thinking) : '(없음)'}`,
     `system.length: ${system.length}`,
-    `system.sha256: ${sha256(system)}`,
+    `system.sha256: ${await sha256(system)}`,
     '',
     '───── system ─────',
     system,
@@ -108,7 +88,7 @@ describe('요청 파라미터 스냅숏', () => {
         // analyze.ts 와 같은 순서: 정규화 → 모델 결정 → 조립
         const text = normalize(raw);
         const model = resolveModel(mode, {});
-        const dump = 직렬화(조립(text, mode, model));
+        const dump = await 직렬화(조립(text, mode, model));
         await expect(dump).toMatchFileSnapshot(`./__snapshots__/request-${mode}-${이름}.txt`);
       });
     }
