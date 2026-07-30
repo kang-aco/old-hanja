@@ -12,12 +12,26 @@
  * 실패가 곧 잘못을 뜻하지 않는다. 검사 대상을 문장이 아니라 핵심 토큰으로 줄여 둔 것도
  * 정당한 개선 때마다 깨지지 않게 하기 위한 것이다. 다만 갱신할 때는 "그 규칙이 왜
  * 있었는지"를 확인하고 지우십시오 — 위 之 사례가 그렇게 사라졌다.
+ *
+ * ── SYSTEM_PROMPT 가 아니라 buildPrompt() 를 보는 이유 ─────────────────────
+ * 실제로 API 에 나가는 것은 buildPrompt() 의 결과다. 상수를 직접 보면, 나중에
+ * buildPrompt 안에서 조건에 따라 일부를 빼거나 덧붙여도 이 테스트는 아무것도 눈치채지
+ * 못한다. 그래서 프롬프트 내용에 관한 검사는 모두 buildPrompt() 를 거친다.
+ * 상수 자체가 우회되는 경우는 tests/prompt.test.ts 의 브리지 테스트가 막는다.
  */
 import { describe, it, expect } from 'vitest';
 import { ANALYSIS_VERSION, maxTokensFor, predictCostUsd } from '../src/lib/analysis';
-import { SYSTEM_PROMPT, ANALYSIS_SCHEMA } from '../src/lib/prompt';
+import { ANALYSIS_SCHEMA, buildPrompt } from '../src/lib/prompt';
 import { HANJA_CLASS } from '../src/lib/hanja';
 import { hanjaCountDiff } from '../src/lib/validate';
+
+/**
+ * 검사 대상 — 실제로 전송되는 system 프롬프트.
+ *
+ * mode 는 system 을 바꾸지 않는다(정밀 모드는 모델을 바꾼다). 그 사실 자체는
+ * tests/prompt.test.ts 에서 확인하고, 여기서는 대표로 light 를 쓴다.
+ */
+const SYSTEM = buildPrompt({ text: '學而時習之', mode: 'light' }).system;
 
 // ── 규칙 존재 확인 — 핵심 토큰만 ────────────────────────────────────────────
 
@@ -38,7 +52,7 @@ const 규칙: [string, string, string][] = [
 describe('프롬프트 규칙이 살아 있다', () => {
   for (const [이름, 토큰, 사고] of 규칙) {
     it(`${이름} — 없으면: ${사고}`, () => {
-      expect(SYSTEM_PROMPT).toContain(토큰);
+      expect(SYSTEM).toContain(토큰);
     });
   }
 });
@@ -51,7 +65,7 @@ describe('프롬프트 규칙이 살아 있다', () => {
  * 않고, 예시가 규칙을 위반하는 순간에만 깨진다. 바로 之 누락 사고의 형태다.
  */
 function fewShotPairs(): { source: string; reconstruction: string }[] {
-  const lines = SYSTEM_PROMPT.split('\n');
+  const lines = SYSTEM.split('\n');
   const pairs: { source: string; reconstruction: string }[] = [];
 
   for (let i = 0; i < lines.length; i++) {
@@ -173,10 +187,16 @@ describe('비용 모델', () => {
   /**
    * 사고: 글자별 분해(word_breakdown)가 출력 토큰의 대부분을 차지해 1건당 약 50원이
    * 들었다. 제거해서 약 19원으로 내렸다. 다시 들어오면 비용이 그대로 되돌아간다.
+   *
+   * 스키마와 프롬프트는 성격이 다르므로 두 건으로 나눈다. 스키마에만 남거나 프롬프트에만
+   * 남는 경우가 각각 따로 보이게 하려는 것이다.
    */
-  it('글자별 분해가 되살아나지 않았다', () => {
+  it('글자별 분해가 스키마에 되살아나지 않았다', () => {
     expect(Object.keys(ANALYSIS_SCHEMA.properties)).not.toContain('word_breakdown');
-    expect(SYSTEM_PROMPT).not.toContain('word_breakdown');
+  });
+
+  it('글자별 분해가 프롬프트에 되살아나지 않았다', () => {
+    expect(SYSTEM).not.toContain('word_breakdown');
   });
 });
 
