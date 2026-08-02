@@ -22,18 +22,9 @@ export const MODEL_DEEP = 'claude-sonnet-5';
 
 export type Mode = 'light' | 'deep';
 
-/**
- * 분석 로직의 버전. 캐시 키에 포함된다.
- *
- * 프롬프트·스키마·교정 로직을 바꿀 때마다 올리십시오. 올리지 않으면 이미 분석된
- * 구절은 낡은 결과가 영구히 서빙되어 개선이 사용자에게 닿지 않습니다.
- * 실제로 그 일이 있었습니다 — 교정 로직을 고쳐 배포했는데도 프로덕션의 p1 이
- * 수정 전 캐시(cached=true, 0원)를 그대로 돌려주어 검증 자체가 막혔습니다.
- *
- * 올리면 기존 캐시가 자연히 무효가 되고(키가 달라져 캐시 미스), 다음 조회 때
- * 새로 분석됩니다. 낡은 행은 남지만 용량이 작아 그대로 두어도 무해합니다.
- */
-export const ANALYSIS_VERSION = 'v3-repair-budget';
+// ANALYSIS_VERSION 은 src/lib/cache-key.ts 로 옮겼다.
+// 이 상수를 소비하는 곳이 캐시 키뿐이므로, 키를 만드는 함수 옆에 두는 것이
+// "결과를 결정하는 요소를 한 곳에 모은다"는 4단계의 실질이다.
 
 /** 1M 토큰당 단가 (USD) — 응답에 예상 비용을 표시하는 데만 사용 */
 export const PRICING: Record<string, { input: number; output: number }> = {

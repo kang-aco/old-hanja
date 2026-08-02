@@ -15,8 +15,31 @@
  * ※ analysis.ts 는 이 파일을 import 하지 않는다. 이 파일이 analysis.ts 를
  *   참조하므로(ANALYSIS_VERSION, normalize, Mode), 반대 방향이 생기면 순환이 된다.
  */
-import { ANALYSIS_VERSION, normalize, type Mode } from './analysis';
+import { normalize, type Mode } from './analysis';
 import { sha256 } from './hash';
+
+/**
+ * 분석 로직의 버전. 캐시 키에 포함된다.
+ *
+ * 프롬프트·스키마·교정 로직·정규화를 바꿀 때마다 올리십시오. 올리지 않으면 이미
+ * 분석된 구절은 낡은 결과가 영구히 서빙되어 개선이 사용자에게 닿지 않습니다.
+ * 실제로 그 일이 있었습니다 — 교정 로직을 고쳐 배포했는데도 프로덕션의 p1 이
+ * 수정 전 캐시(cached=true, 0원)를 그대로 돌려주어 검증 자체가 막혔습니다.
+ *
+ * 올리면 기존 캐시가 자연히 무효가 되고(키가 달라져 캐시 미스), 다음 조회 때
+ * 새로 분석됩니다. 낡은 행은 남지만 용량이 작아 그대로 두어도 무해합니다.
+ *
+ * ※ 낡은 행을 새 키로 옮기는 마이그레이션은 할 수 없습니다. 키 재료에 mode 가
+ *   들어가는데 analyses 테이블에 mode 컬럼이 없고, 해시는 단방향이라 기존 행에서
+ *   재료를 복원할 수도 없습니다. model 로 역추정하는 방법은 ANTHROPIC_MODEL_DEEP
+ *   으로 모델을 갈아끼울 수 있어 보장이 아닙니다. 버려지는 것이 정상입니다.
+ *
+ * 이력:
+ *  - v3-repair-budget : 교정 호출 출력 예산 수정
+ *  - v4-zerowidth-normalize : normalize() 가 U+FEFF 를 공백으로 바꾸던 것을 고치고
+ *    제거 범위에 U+2060-U+2064 를 넣었다. 정규화 결과가 달라지므로 키도 달라진다.
+ */
+export const ANALYSIS_VERSION = 'v4-zerowidth-normalize';
 
 /**
  * 캐시 키(SHA-256 16진 64자).

@@ -14,23 +14,33 @@
  * 새 값으로 갱신하고, 옛 값은 "버전이 키를 가른다"는 증거로 아래에 남긴다.
  */
 import { describe, it, expect } from 'vitest';
-import { cacheKey } from '../src/lib/cache-key';
-import { ANALYSIS_VERSION, normalize } from '../src/lib/analysis';
+import { ANALYSIS_VERSION, cacheKey } from '../src/lib/cache-key';
+import { normalize } from '../src/lib/analysis';
 import { sha256 } from '../src/lib/hash';
 
-/** 프로덕션 D1 의 analyses 테이블에 실제로 들어 있는 행의 구절과 그 text_hash. */
+/** 프로덕션 D1 의 analyses 테이블에 실제로 들어 있는 행의 구절. */
 const PROD_TEXT = '知之爲知之, 不知爲不知, 是知也';
-const PROD_HASH = 'd5ac31dfdee8395f792df98612b34fefa3124e3858e21527283761f0f6b87b7c';
 
-describe('cacheKey — 분리가 키를 바꾸지 않았다', () => {
+/**
+ * v3-repair-budget 시절의 키. 프로덕션 D1 에서 조회해 확인한 실제 `text_hash` 다.
+ * 분리 커밋에서는 이 값이 골든값이었고, 통과가 곧 "이사가 키를 바꾸지 않았다"였다.
+ * 버전을 올린 지금은 반대로 **이 값이 나오면 안 된다** 는 증거로 쓴다.
+ */
+const V3_HASH = 'd5ac31dfdee8395f792df98612b34fefa3124e3858e21527283761f0f6b87b7c';
+
+/** v4-zerowidth-normalize 의 키. */
+const V4_HASH = 'bf4ea688629c9b146ca499752b80306d1e6fab3575d58696ec0f80f0f7cac361';
+
+describe('cacheKey — 골든 해시', () => {
   /**
-   * 3단계의 요청 스냅숏에 해당하는 못.
+   * 키 값을 통째로 고정한다. 이 값이 달라지면 배포 즉시 전 캐시가 미스가 되므로,
+   * 의도치 않은 변경(구분자·필드 순서·정규화 변화)이 조용히 지나가면 안 된다.
    *
-   * 라우트 핸들러 안에 인라인이던 조립을 함수로 옮겼다. 그 이사가 무변경이었음을
-   * 프로덕션 데이터로 확인한다. 이 값이 달라지면 배포 즉시 전 캐시가 미스가 된다.
+   * 버전을 올리면 이 값이 바뀐다. 그때 이 테스트가 깨지는 것이 정상이다 —
+   * 새 값으로 갱신하고, 옛 값은 아래 "버전이 키를 가른다" 검사에 남긴다.
    */
-  it('프로덕션에 실재하는 행의 해시를 그대로 만든다', async () => {
-    expect(await cacheKey(PROD_TEXT, 'light')).toBe(PROD_HASH);
+  it('현재 버전의 키를 만든다', async () => {
+    expect(await cacheKey(PROD_TEXT, 'light')).toBe(V4_HASH);
   });
 
   /**
@@ -74,6 +84,17 @@ describe('cacheKey — 무엇이 키를 가르는가', () => {
   it('버전이 키에 반영된다', async () => {
     const 다른버전 = await sha256(`${ANALYSIS_VERSION}-XX light ${PROD_TEXT}`);
     expect(await cacheKey(PROD_TEXT, 'light')).not.toBe(다른버전);
+  });
+
+  /**
+   * 버전 인상이 실제로 캐시를 무효화하는지 — 구체적인 값으로 확인한다.
+   *
+   * V3_HASH 는 프로덕션 D1 에 지금도 실재하는 행의 키다. 새 키가 그 값과 같다면
+   * 낡은 행이 그대로 다시 서빙된다는 뜻이고, 그것이 이 프로젝트에서 실제로 났던
+   * 사고다(교정 로직을 고쳐 배포했는데 수정 전 캐시가 0원으로 반환됨).
+   */
+  it('옛 버전(v3)의 키와 다르다 — 낡은 캐시가 다시 잡히지 않는다', async () => {
+    expect(await cacheKey(PROD_TEXT, 'light')).not.toBe(V3_HASH);
   });
 
   it('원문이 다르면 키가 다르다', async () => {
