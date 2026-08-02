@@ -25,6 +25,7 @@ import {
 } from '../src/lib/debug';
 import { ANALYSIS_VERSION } from '../src/lib/cache-key';
 import { buildAnalysisRequest } from '../src/lib/prompt';
+import { repairPrompt } from '../src/lib/validate';
 
 const ch = (cp: number) => String.fromCodePoint(cp);
 
@@ -277,6 +278,143 @@ describe('findInvisible — 사각지대를 재현하지 않는다', () => {
 
   it('탭과 개행은 보이지 않는 문자로 치지 않는다 — 정상 입력이다', () => {
     expect(findInvisible('學\t而\n時')).toEqual([]);
+  });
+});
+
+// ── 비밀값 누출 ─────────────────────────────────────────────────────────────
+
+/**
+ * 실제로는 절대 payload 에 나타나면 안 되는 값들. 화면에 실리면 그대로 공개된다.
+ *
+ * 모델 이름(ANTHROPIC_MODEL_*)은 여기 넣지 않는다 — `request.model` 로 나가는 것이
+ * 의도이고, 비밀도 아니다. 넣으면 정상 동작이 실패로 잡힌다.
+ */
+const SECRET = {
+  ANTHROPIC_API_KEY: 'sk-ant-api03-SENTINEL-MUST-NOT-LEAK',
+  DEBUG_KEY: 'sentinel-debug-key-must-not-leak',
+};
+
+/**
+ * payload 를 **통째로 직렬화해서** 훑는다.
+ *
+ * "최상위 키는 다섯 개뿐" 검사로는 부족하다. 그 검사는 최상위만 보므로
+ * `request` 나 `response` **안쪽**에 env 가 끼어드는 회귀를 놓친다. 실제로 이런
+ * 종류의 누출은 늘 안쪽에서 난다 — 요청 객체를 통째로 스프레드하거나, 디버깅
+ * 중에 env 를 임시로 끼워 넣고 지우지 않는 식이다.
+ */
+function 샌값(payload: unknown): string[] {
+  const s = JSON.stringify(payload);
+  const found: string[] = [];
+  // 값이 바뀌어도 형태로 잡는다. 이 패턴이 화면에 있으면 그 자체가 사고다.
+  if (/sk-ant-/.test(s)) found.push('sk-ant- 패턴');
+  for (const [name, value] of Object.entries(SECRET)) {
+    if (s.includes(value)) found.push(name);
+  }
+  return found;
+}
+
+/** 다섯 층이 모두 채워진 payload — 안쪽까지 훑으려면 빈 곳이 없어야 한다 */
+function 가득찬payload() {
+  const params = buildAnalysisRequest({ text: '知之爲知之, 不知爲不知', mode: 'deep' }, 'claude-sonnet-5');
+  const diff = [{ hanja: '之', expected: 2, got: 4 }];
+  const repairParams: Record<string, unknown> = {
+    model: 'claude-sonnet-5',
+    max_tokens: 1200,
+    messages: [{ role: 'user', content: repairPrompt('知之爲知之, 不知爲不知', '(직전 시도)', diff) }],
+    output_config: { format: { type: 'json_schema', schema: {} } },
+    thinking: { type: 'disabled' },
+  };
+  return buildDebug({
+    ...base,
+    mode: 'deep',
+    request: params,
+    response: { stop_reason: 'end_turn', parsed_ok: true, raw_text: '{"original":"知之爲知之"}' },
+    validate: {
+      diff: [],
+      deviation: 0,
+      initial_diff: diff,
+      repair_request: viewRequest(repairParams),
+      repair_response: { stop_reason: 'end_turn', parsed_ok: true, raw_text: '{"a":1}' },
+    },
+  })!;
+}
+
+describe('buildDebug — 비밀값이 payload 안쪽에 실리지 않는다', () => {
+  it('다섯 층이 모두 채워진 payload 어디에도 비밀값이 없다', () => {
+    expect(샌값(가득찬payload())).toEqual([]);
+  });
+
+  /**
+   * env 를 payload 에 넘기지 않는다는 것을 실제 흐름으로 확인한다.
+   * 판정에 쓴 DEBUG_KEY 가 결과물에 묻어 나오면 안 된다.
+   */
+  it('판정에 쓴 DEBUG_KEY 가 payload 로 새지 않는다', async () => {
+    const env = { DEBUG_KEY: SECRET.DEBUG_KEY, ANTHROPIC_API_KEY: SECRET.ANTHROPIC_API_KEY };
+    const allowed = await debugAllowed(SECRET.DEBUG_KEY, env);
+    expect(allowed).toBe(true);
+    expect(샌값(buildDebug({ ...base, allowed }))).toEqual([]);
+  });
+});
+
+/**
+ * 위 검사는 "찾지 못했다" 쪽으로만 쓰이므로, 훑는 코드가 잘못되어 아무것도 보지
+ * 못하면 조용히 전부 통과한다. 이 파일에서 가장 위험한 고장 방식이다.
+ * 그래서 일부러 비밀값을 **각 층 안쪽에** 심어 놓고 잡히는지 확인한다.
+ */
+describe('대조군 — 비밀값 검사가 실제로 안쪽까지 잡아낸다', () => {
+  it.each([
+    [
+      'input.raw (1층)',
+      () => buildDebug({ ...base, raw: `學而 ${SECRET.ANTHROPIC_API_KEY}` })!,
+    ],
+    [
+      'request.system (3층 · 두 겹 안쪽)',
+      () => {
+        const p = buildAnalysisRequest({ text: '學而時習之', mode: 'light' }, 'claude-haiku-4-5');
+        return buildDebug({ ...base, request: { ...p, system: `${p.system}\n${SECRET.ANTHROPIC_API_KEY}` } })!;
+      },
+    ],
+    [
+      'response.raw_text (4층 · 두 겹 안쪽)',
+      () =>
+        buildDebug({
+          ...base,
+          response: { stop_reason: 'end_turn', parsed_ok: false, raw_text: SECRET.ANTHROPIC_API_KEY },
+        })!,
+    ],
+    [
+      'validate.repair_request.user (6층 · 세 겹 안쪽)',
+      () =>
+        buildDebug({
+          ...base,
+          validate: {
+            diff: [],
+            deviation: 0,
+            initial_diff: [],
+            repair_request: viewRequest({
+              model: 'claude-sonnet-5',
+              max_tokens: 1200,
+              messages: [{ role: 'user', content: SECRET.ANTHROPIC_API_KEY }],
+            }),
+            repair_response: null,
+          },
+        })!,
+    ],
+  ])('%s 에 심으면 잡아낸다', (_위치, 만들기) => {
+    expect(샌값(만들기())).toContain('sk-ant- 패턴');
+  });
+
+  /**
+   * 가장 현실적인 회귀: 누가 요청 객체를 통째로 스프레드하거나 디버깅 중에 env 를
+   * 끼워 넣고 지우지 않는 것. 타입으로는 막히지만 캐스팅 한 번이면 뚫린다.
+   * **최상위 키 검사는 이 경우를 못 잡는다** — 최상위는 여전히 다섯 개다.
+   */
+  it('request 안쪽에 env 객체가 통째로 끼면 잡아낸다', () => {
+    const 오염된 = 가득찬payload() as unknown as Record<string, unknown>;
+    오염된.request = { ...(오염된.request as object), env: { ...SECRET } };
+
+    expect(Object.keys(오염된)).toEqual(['input', 'cache', 'request', 'response', 'validate']);
+    expect(샌값(오염된)).toEqual(['sk-ant- 패턴', 'ANTHROPIC_API_KEY', 'DEBUG_KEY']);
   });
 });
 
