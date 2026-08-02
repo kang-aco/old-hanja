@@ -1,7 +1,6 @@
 import type { APIRoute } from 'astro';
 import Anthropic from '@anthropic-ai/sdk';
 import {
-  ANALYSIS_VERSION,
   estimateCostUsd,
   hasHanja,
   normalize,
@@ -12,7 +11,8 @@ import {
   type Mode,
 } from '../../lib/analysis';
 import { buildAnalysisRequest } from '../../lib/prompt';
-import { extractHanja, sha256 } from '../../lib/hash';
+import { cacheKey } from '../../lib/cache-key';
+import { extractHanja } from '../../lib/hash';
 import {
   REPAIR_SCHEMA,
   hanjaCountDiff,
@@ -97,12 +97,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
     );
   }
 
-  // 캐시 키에 분석 버전과 mode 를 반드시 포함한다.
-  // 예전에 sha256(text) 만 썼더니, light 로 한 번 분석한 구절은 "정밀 분석"을 켜도
-  // 캐시된 Haiku 결과가 그대로 반환되어 토글이 아무 효과가 없었다.
-  // 버전이 없으면 프롬프트나 교정 로직을 고쳐 배포해도 이미 분석된 구절은 낡은 결과가
-  // 영구히 서빙된다. 실제로 교정 수정 후 프로덕션 검증이 이 때문에 막혔다.
-  const textHash = await sha256(`${ANALYSIS_VERSION} ${mode} ${text}`);
+  // 캐시 키를 만드는 코드는 src/lib/cache-key.ts 한 곳뿐이다.
+  // 무엇이 키를 가르는지(버전·mode·정규화된 원문)와 두 번의 사고 이력은 그 파일에 있다.
+  const textHash = await cacheKey(text, mode);
   const db = env.DB;
 
   // ── 1) 캐시 조회 — 히트하면 API 비용 0 ──────────────────────────────────
