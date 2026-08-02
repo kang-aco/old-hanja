@@ -20,7 +20,8 @@
  * 상수 자체가 우회되는 경우는 tests/prompt.test.ts 의 브리지 테스트가 막는다.
  */
 import { describe, it, expect } from 'vitest';
-import { ANALYSIS_VERSION, maxTokensFor, predictCostUsd } from '../src/lib/analysis';
+import { maxTokensFor, predictCostUsd } from '../src/lib/analysis';
+import { ANALYSIS_VERSION } from '../src/lib/cache-key';
 import { ANALYSIS_SCHEMA, buildPrompt } from '../src/lib/prompt';
 import { HANJA_CLASS } from '../src/lib/hanja';
 import { hanjaCountDiff } from '../src/lib/validate';

@@ -22,18 +22,9 @@ export const MODEL_DEEP = 'claude-sonnet-5';
 
 export type Mode = 'light' | 'deep';
 
-/**
- * 분석 로직의 버전. 캐시 키에 포함된다.
- *
- * 프롬프트·스키마·교정 로직을 바꿀 때마다 올리십시오. 올리지 않으면 이미 분석된
- * 구절은 낡은 결과가 영구히 서빙되어 개선이 사용자에게 닿지 않습니다.
- * 실제로 그 일이 있었습니다 — 교정 로직을 고쳐 배포했는데도 프로덕션의 p1 이
- * 수정 전 캐시(cached=true, 0원)를 그대로 돌려주어 검증 자체가 막혔습니다.
- *
- * 올리면 기존 캐시가 자연히 무효가 되고(키가 달라져 캐시 미스), 다음 조회 때
- * 새로 분석됩니다. 낡은 행은 남지만 용량이 작아 그대로 두어도 무해합니다.
- */
-export const ANALYSIS_VERSION = 'v3-repair-budget';
+// ANALYSIS_VERSION 은 src/lib/cache-key.ts 로 옮겼다.
+// 이 상수를 소비하는 곳이 캐시 키뿐이므로, 키를 만드는 함수 옆에 두는 것이
+// "결과를 결정하는 요소를 한 곳에 모은다"는 4단계의 실질이다.
 
 /** 1M 토큰당 단가 (USD) — 응답에 예상 비용을 표시하는 데만 사용 */
 export const PRICING: Record<string, { input: number; output: number }> = {
@@ -142,11 +133,44 @@ export interface AnalyzeMeta {
 // 단가·출력 예산·정규화만 남는다. prompt.ts 가 이 파일을 참조하므로(maxTokensFor, Mode),
 // 반대 방향으로 import 하면 순환 참조가 된다. 이 파일은 prompt.ts 를 import 하지 않는다.
 
-/** 원문 정규화 — 캐시 키 계산에 사용 */
+/**
+ * 폭 없는 문자 — 무엇이 걸러지는지 소스에서 읽을 수 있도록 \u 이스케이프로만 적는다.
+ *
+ * 예전에는 이 클래스가 보이지 않는 문자 그대로 적혀 있어 `[-]` 처럼만 보였다.
+ * hanja.ts 가 같은 이유로 이스케이프 표기를 강제하고 있다. 리터럴로 적으면
+ * 편집·복사 과정에서 조용히 달라져도 아무도 알아채지 못한다.
+ *
+ *  U+200B-U+200D  ZERO WIDTH SPACE / NON-JOINER / JOINER
+ *  U+2060-U+2064  WORD JOINER, FUNCTION APPLICATION, INVISIBLE TIMES,
+ *                 INVISIBLE SEPARATOR, INVISIBLE PLUS
+ *  U+FEFF         ZERO WIDTH NO-BREAK SPACE (BOM)
+ *
+ * 일부러 넣지 않은 것:
+ *  - U+FE00-FE0F(변이 선택자), U+E0100-E01EF(IVS) — CJK 이체자를 구분하는 데
+ *    실제로 쓰인다. 지우면 서로 다른 글자가 같은 캐시 키로 합쳐진다.
+ *  - U+00AD SOFT HYPHEN — 폭이 없지 않다(줄바꿈 위치에서 하이픈으로 보인다).
+ *    한문 원문에 낄 일이 드물어 범위에서 뺐다. 근거가 생기면 그때 넣는다.
+ */
+const ZERO_WIDTH = /[\u200B-\u200D\u2060-\u2064\uFEFF]/g;
+
+/**
+ * 원문 정규화 — 캐시 키 계산에 사용.
+ *
+ * ※ 폭 없는 문자 제거가 공백 정리보다 **먼저** 와야 한다. 순서가 뒤집혀 있었고,
+ *   그래서 클래스에 적힌 U+FEFF 가 닿지 않는 코드였다. 자바스크립트 `\s` 의 정의에
+ *   U+FEFF 가 포함되므로, 공백 정리가 먼저 돌면 U+FEFF 는 이미 공백 한 칸으로
+ *   바뀐 뒤다. 결과: 글자 사이에 U+FEFF 가 끼면 없던 공백이 생겨 눈에 똑같은 구절이
+ *   다른 캐시 키를 받았다. 폭이 없어 화면에 보이지 않으니 알아챌 방법도 없었다.
+ *   (`\s` 의 폭 없는 문자 범위는 U+2000-U+200A 에서 끝나므로 U+200B-U+200D 는
+ *   포함되지 않는다. 그래서 예전 순서에서도 그 셋은 정상적으로 제거됐다.)
+ *
+ * 이 함수는 멱등이다 — normalize(normalize(x)) === normalize(x).
+ * cache-key.ts 가 그 성질에 기대고 있고, tests/cache-key.test.ts 가 검사한다.
+ */
 export function normalize(text: string): string {
   return text
+    .replace(ZERO_WIDTH, '')
     .replace(/\s+/g, ' ')
-    .replace(/[​-‍﻿]/g, '')
     .trim();
 }
 
