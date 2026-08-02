@@ -95,6 +95,21 @@ describe('cacheKey — 무엇이 키를 가르지 않는가', () => {
     expect(await cacheKey(raw, 'light')).toBe(await cacheKey(normalize(raw), 'light'));
   });
 
+  /**
+   * 완료 조건 — 폭 없는 문자가 낀 원문과 끼지 않은 원문이 같은 캐시 키를 만든다.
+   *
+   * 이것이 4단계에서 normalize() 를 고친 이유다. 예전에는 U+FEFF 가 공백 한 칸으로
+   * 바뀌고 U+2060 은 그대로 남아, 화면상 완전히 똑같은 구절이 다른 키를 받아 두 번
+   * 과금됐다. 폭이 없어 사람 눈으로는 원인을 찾을 수 없는 종류의 사고다.
+   * (웹에서 원문을 복사해 붙이면 실제로 이런 문자가 따라 들어온다.)
+   */
+  it('폭 없는 문자가 낀 원문과 안 낀 원문이 같은 키가 된다', async () => {
+    const zw = (cp: number) => String.fromCodePoint(cp);
+    const 낀것 = `學${zw(0x200b)}而${zw(0xfeff)}時${zw(0x2060)}習之`;
+    expect(낀것).not.toBe('學而時習之'); // 전제: 두 문자열은 실제로 다르다
+    expect(await cacheKey(낀것, 'light')).toBe(await cacheKey('學而時習之', 'light'));
+  });
+
   // 이 성질이 곧 "같은 구절을 두 번 과금하지 않는다" 이다.
   it('공백만 다른 두 원문이 같은 키가 된다', async () => {
     expect(await cacheKey(' 學而  時習之 ', 'light')).toBe(await cacheKey('學而 時習之', 'light'));
