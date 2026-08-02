@@ -648,6 +648,71 @@ button.primary:not(:disabled):hover {
   background: #f1f8f3;
 }
 
+/* ── 디버그 화면 ─────────────────────────────────────────────────────── */
+/* DEBUG_KEY 가 맞을 때만 서버가 debug 를 만들고, 그때만 이 절이 열린다.
+   화면을 꾸미기보다 층 경계가 눈에 들어오는 것이 목적이다. */
+.debug {
+  margin-top: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-2);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.debug summary {
+  cursor: pointer;
+  padding: 10px 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.debug .d-layer {
+  border-top: 1px solid var(--line);
+  padding: 12px 14px;
+}
+.debug .d-layer h4 {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: var(--accent);
+}
+.debug .d-row {
+  display: flex;
+  gap: 10px;
+  padding: 2px 0;
+  align-items: baseline;
+}
+.debug .d-key {
+  flex: 0 0 170px;
+  color: var(--ink-3);
+}
+.debug .d-val {
+  flex: 1 1 auto;
+  word-break: break-all;
+}
+.debug .d-block {
+  margin: 6px 0;
+}
+.debug pre {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+@media (max-width: 600px) {
+  .debug .d-row {
+    display: block;
+  }
+  .debug .d-key {
+    display: block;
+  }
+}
+
 /* ── 최근 검색 ───────────────────────────────────────────────────────── */
 .recent {
   margin-top: 30px;

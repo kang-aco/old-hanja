@@ -12,6 +12,7 @@ import {
 } from '../../lib/analysis';
 import { buildAnalysisRequest } from '../../lib/prompt';
 import { cacheKey } from '../../lib/cache-key';
+import { buildDebug, debugAllowed, viewRequest, type ValidateView } from '../../lib/debug';
 import { extractHanja } from '../../lib/hash';
 import {
   REPAIR_SCHEMA,
@@ -102,6 +103,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const textHash = await cacheKey(text, mode);
   const db = env.DB;
 
+  // ── 디버그 관측 ─────────────────────────────────────────────────────────
+  // 열쇠는 헤더로 받는다. 쿼리스트링에 실으면 Cloudflare 액세스 로그와 리퍼러에
+  // 그대로 남는다. 화면은 주소의 ?debug=<키> 를 읽어 이 헤더로 옮겨 붙인다.
+  // 값이 없거나 틀리면 debug 는 undefined 가 되고, 아래 스프레드가 필드 자체를
+  // 만들지 않는다 — 프롬프트 전문과 AI 원본이 실리므로 기본은 완전 차단이다.
+  const dbg = await debugAllowed(request.headers.get('x-debug-key'), env);
+  const debugBase = { allowed: dbg, raw, normalized: text, hanjaCount, mode, cacheKey: textHash };
+
   // ── 1) 캐시 조회 — 히트하면 API 비용 0 ──────────────────────────────────
   // D1 이 없거나(바인딩 누락) 스키마가 안 들어가 있어도 분석 자체는 계속 되어야 한다.
   // 캐시는 최적화일 뿐이므로 실패를 삼키고 캐시 미스로 취급한다.
@@ -127,7 +136,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
       output_tokens: 0,
       cost_usd: 0,
     };
-    return json({ ok: true, analysis: cached.result, meta, extras: await extras(db, text) });
+    // 캐시 히트면 요청을 아예 만들지 않았으므로 request 는 null 이다. 없는 프롬프트를
+    // 재구성해 보여 주면 "실제로 전송된 것"이라는 이 화면의 전제가 무너진다.
+    const debug = buildDebug({ ...debugBase, cacheHit: true });
+    return json({
+      ok: true,
+      analysis: cached.result,
+      meta,
+      extras: await extras(db, text),
+      ...(debug && { debug }),
+    });
   }
 
   // ── 2) 일일 호출 상한 ────────────────────────────────────────────────────
@@ -196,11 +214,26 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return json({ ok: false, error: `분석 요청이 실패했습니다: ${detail}` }, 502);
   }
 
+  // message 를 손에 쥔 뒤의 실패 경로에는 모두 debug 를 붙인다. "어느 층에서 틀렸는지"가
+  // 가장 절실한 순간이 정확히 여기다 — 성공 응답만 관측하면, AI 원본이 JSON 이 아니었던
+  // 경우에 그 원본이 어디에도 남지 않아 4층과 5층을 가를 방법이 없어진다.
+  const rawBlock = message.content.find((b) => b.type === 'text');
+  const rawText = rawBlock && rawBlock.type === 'text' ? rawBlock.text : '';
+  const failed = (body: Record<string, unknown>, status: number) => {
+    const debug = buildDebug({
+      ...debugBase,
+      cacheHit: false,
+      request: params,
+      response: { stop_reason: message.stop_reason ?? null, parsed_ok: false, raw_text: rawText },
+    });
+    return json({ ...body, ...(debug && { debug }) }, status);
+  };
+
   if (message.stop_reason === 'refusal') {
-    return json({ ok: false, error: '이 요청은 처리할 수 없습니다. 다른 구절로 시도해 주세요.' }, 422);
+    return failed({ ok: false, error: '이 요청은 처리할 수 없습니다. 다른 구절로 시도해 주세요.' }, 422);
   }
   if (message.stop_reason === 'max_tokens') {
-    return json(
+    return failed(
       {
         ok: false,
         code: 'truncated',
@@ -212,16 +245,15 @@ export const POST: APIRoute = async ({ request, locals }) => {
     );
   }
 
-  const textBlock = message.content.find((b) => b.type === 'text');
-  if (!textBlock || textBlock.type !== 'text') {
-    return json({ ok: false, error: '분석 결과가 비어 있습니다. 다시 시도해 주세요.' }, 502);
+  if (!rawBlock || rawBlock.type !== 'text') {
+    return failed({ ok: false, error: '분석 결과가 비어 있습니다. 다시 시도해 주세요.' }, 502);
   }
 
   let analysis: Analysis;
   try {
-    analysis = JSON.parse(textBlock.text) as Analysis;
+    analysis = JSON.parse(rawText) as Analysis;
   } catch {
-    return json({ ok: false, error: '분석 결과를 해석할 수 없습니다. 다시 시도해 주세요.' }, 502);
+    return failed({ ok: false, error: '분석 결과를 해석할 수 없습니다. 다시 시도해 주세요.' }, 502);
   }
 
   let inputTokens = message.usage?.input_tokens ?? 0;
@@ -232,7 +264,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
   // 네 차례 강화해도 막히지 않아(Haiku 3/3 실패, Sonnet 1/3 실패) 코드로 검증한다.
   // 검증 자체는 비용 0 이고, 어긋났을 때만 해당 필드만 다시 만든다.
   const warnings: string[] = [];
-  let diff: CountMismatch[] = hanjaCountDiff(text, analysis.word_order_reconstruction);
+  const initialDiff: CountMismatch[] = hanjaCountDiff(text, analysis.word_order_reconstruction);
+  let diff: CountMismatch[] = initialDiff;
+
+  // 교정 호출은 요청 파라미터가 이 파일 안에 인라인이라(본 분석과 달리 prompt.ts 로
+  // 옮기지 않았다) 사후에 볼 방법이 없었다. 교정이 3/3 무효였던 원인은 예산 700 을
+  // sonnet 의 사고 토큰이 다 먹은 것이었는데, 예산도 thinking 여부도 남지 않았다.
+  const repairDebug: Pick<ValidateView, 'repair_request' | 'repair_response'> = {
+    repair_request: null,
+    repair_response: null,
+  };
 
   // 어긋났으면 해당 필드만 1회 다시 만든다.
   let repairInfo: {
@@ -267,6 +308,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       if (repairModel !== resolveModel('light', env)) {
         repairParams.thinking = { type: 'disabled' };
       }
+      repairDebug.repair_request = viewRequest(repairParams);
 
       const repair = (await client.messages
         .stream(repairParams as never)
@@ -277,9 +319,17 @@ export const POST: APIRoute = async ({ request, locals }) => {
       repairInfo.stop = repair.stop_reason ?? null;
 
       const rb = repair.content.find((b) => b.type === 'text');
+      // 파싱 전에 원본을 먼저 담아 둔다. JSON 이 아니면 아래에서 예외가 나고 바깥
+      // catch 가 삼키므로, 나중에 담으면 정작 필요한 원본이 남지 않는다.
+      repairDebug.repair_response = {
+        stop_reason: repair.stop_reason ?? null,
+        parsed_ok: false,
+        raw_text: rb && rb.type === 'text' ? rb.text : '',
+      };
       if (rb && rb.type === 'text') {
         const fixed = (JSON.parse(rb.text) as { word_order_reconstruction?: string })
           .word_order_reconstruction;
+        repairDebug.repair_response.parsed_ok = true;
         if (fixed) {
           const after = hanjaCountDiff(text, fixed);
           // 수용 기준은 완전 일치가 아니라 이탈도 감소다. 之 를 2→4 로 틀린 것을
@@ -323,7 +373,27 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   // repair 는 관측용이다. 교정이 얼마나 자주 필요한지, 받아들여졌는지 확인할 수 있다.
-  return json({ ok: true, analysis, meta, warnings, repair: repairInfo, extras: await extras(db, text) });
+  const debug = buildDebug({
+    ...debugBase,
+    cacheHit: false,
+    request: params,
+    response: { stop_reason: message.stop_reason ?? null, parsed_ok: true, raw_text: rawText },
+    validate: {
+      diff,
+      deviation: totalDeviation(diff),
+      initial_diff: initialDiff,
+      ...repairDebug,
+    },
+  });
+  return json({
+    ok: true,
+    analysis,
+    meta,
+    warnings,
+    repair: repairInfo,
+    extras: await extras(db, text),
+    ...(debug && { debug }),
+  });
 };
 
 /** D1 시드에서 추가 연관 콘텐츠를 가져온다 (API 비용 0) */
