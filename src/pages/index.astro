@@ -186,6 +186,18 @@ const EXAMPLES = [
     <div class="usage" id="r-usage"></div>
   </section>
 
+  <!--
+    디버그 화면 — DEBUG_KEY 와 일치하는 값을 헤더로 넘겼을 때만 서버가 debug 를 만든다.
+    #result 바깥에 두는 이유: 분석이 실패하면 #result 가 숨겨지는데, "어느 층에서
+    틀렸는지"가 가장 필요한 순간이 정확히 그때다 (AI 원본이 JSON 이 아니었던 경우).
+  -->
+  <section class="debug" id="debug-wrap" hidden>
+    <details open>
+      <summary>디버그 — 층별 관측</summary>
+      <div id="debug-body"></div>
+    </details>
+  </section>
+
   <section class="recent" id="recent" hidden>
     <h2>최근 검색</h2>
     <ul id="recent-list"></ul>
@@ -295,15 +307,19 @@ const EXAMPLES = [
     alertBox.hidden = true;
     result.hidden = true;
     practice.hidden = true;
+    lastPos = null; // 직전 구절의 품사 결과가 새 디버그 화면에 남지 않게 한다
     startLoading();
 
     try {
       const res = await fetch('/api/analyze', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...debugHeader() },
         body: JSON.stringify({ text: value, mode: deep.checked ? 'deep' : 'light' }),
       });
       const data = await res.json();
+      // 실패해도 debug 는 그린다. AI 원본이 JSON 이 아니었던 경우, 그 원본을 볼 수
+      // 있는 곳이 여기뿐이다.
+      renderDebug(data.debug);
       if (!res.ok || !data.ok) {
         showAlert(data.error ?? '분석에 실패했습니다.');
         return;
@@ -565,6 +581,10 @@ const EXAMPLES = [
     } catch {
       /* 무시 */
     }
+    // 디버그 화면의 2층 자리는 이 응답이 채운다. 허사·문형은 프롬프트에 들어가지
+    // 않으므로 analyze 의 debug 가 아니라 여기서 온다 (계획서 3단계에서 확인한 사실).
+    lastPos = d;
+    renderDebugPos(d);
     if (!d?.ok || !d.tokens?.length) {
       $('r-pos').innerHTML = '<p class="empty">품사 정보를 찾지 못했습니다.</p>';
       $('r-pos-note').textContent = '';
@@ -757,6 +777,151 @@ const EXAMPLES = [
       pills.push(`<span class="pill">약 $${meta.cost_usd.toFixed(4)} (₩${krw})</span>`);
     }
     $('r-usage').innerHTML = pills.join('');
+  }
+
+  // ── 디버그 화면 ─────────────────────────────────────────────────────
+  //
+  // 주소의 ?debug=<키> 를 읽어 API 요청에 헤더로 옮겨 붙인다. 키를 API 의
+  // 쿼리스트링에 실으면 Cloudflare 액세스 로그와 리퍼러에 그대로 남는다.
+  // 서버는 이 값이 DEBUG_KEY(16자 이상)와 일치할 때만 debug 를 만든다.
+  // 값이 없거나 틀리면 응답에 debug 키 자체가 없으므로 여기서는 아무 일도 없다.
+  const DEBUG_KEY = (() => {
+    try {
+      return new URL(location.href).searchParams.get('debug') ?? '';
+    } catch {
+      return '';
+    }
+  })();
+  const debugHeader = () => (DEBUG_KEY ? { 'x-debug-key': DEBUG_KEY } : {});
+
+  let lastDebug = null;
+  let lastPos = null;
+
+  const dRow = (label, value) =>
+    `<div class="d-row"><span class="d-key">${esc(label)}</span><span class="d-val">${esc(value)}</span></div>`;
+  const dPre = (label, value) =>
+    `<div class="d-block"><div class="d-key">${esc(label)}</div><pre>${esc(value)}</pre></div>`;
+  const dList = (arr) => (arr && arr.length ? arr.join(', ') : '(없음)');
+
+  function renderDebug(debug) {
+    lastDebug = debug ?? null;
+    const wrap = $('debug-wrap');
+    if (!debug) {
+      wrap.hidden = true;
+      $('debug-body').innerHTML = '';
+      return;
+    }
+
+    const s = [];
+    const 층 = (n, 이름, 안) => s.push(`<div class="d-layer"><h4>${n} ${esc(이름)}</h4>${안}</div>`);
+
+    const i = debug.input;
+    층(
+      '1층',
+      '입력 · 정규화',
+      dPre('원문', i.raw) +
+        dPre('정규화', i.normalized) +
+        dRow('정규화가 바꿨는가', i.changed ? '예' : '아니오') +
+        dRow('한자 수', i.hanja_count) +
+        // 폭 없는 문자는 위 두 <pre> 에서 서로 똑같이 보인다. 코드포인트로 적어야
+        // 비로소 보인다 — 캐시 키가 갈라진 사고가 발각되지 않은 이유가 그것이다.
+        dRow('보이지 않는 문자 (원문)', dList(i.invisible.raw)) +
+        dRow('보이지 않는 문자 (정규화)', dList(i.invisible.normalized)),
+    );
+
+    const c = debug.cache;
+    층(
+      '캐시',
+      '키',
+      dRow('히트', c.hit ? '예 — 이 결과는 저장된 것이다' : '아니오') +
+        dRow('mode', c.mode) +
+        dRow('ANALYSIS_VERSION', c.version) +
+        dRow('키 (text_hash)', c.key),
+    );
+
+    // A-1: 허사·문형은 프롬프트에 들어가지 않는다. 이 자리는 /api/pos 응답이며,
+    // loadPos 가 도착하는 대로 아래 renderDebugPos 가 채운다.
+    층('2층', '허사·문형 (화면 표시 전용)', '<div id="debug-pos"><p class="empty">…</p></div>');
+
+    const r = debug.request;
+    층(
+      '3층',
+      '요청 (실제로 전송된 것)',
+      r
+        ? dRow('model', r.model) +
+            dRow('max_tokens', r.max_tokens) +
+            dRow('thinking', r.thinking ?? '(붙지 않음)') +
+            dRow('실린 키', dList(r.keys)) +
+            dPre('system', r.system) +
+            dPre('user', r.user)
+        : '<p class="empty">이번 요청에서는 전송되지 않았습니다 — 캐시 히트라 요청을 만들지 않았습니다.</p>',
+    );
+
+    const p = debug.response;
+    층(
+      '4층',
+      'AI 원본 응답 (파싱 전)',
+      p
+        ? dRow('stop_reason', p.stop_reason ?? '(없음)') +
+            dRow('JSON 파싱', p.parsed_ok ? '성공' : '실패') +
+            dPre('원본', p.raw_text)
+        : '<p class="empty">호출하지 않았습니다.</p>',
+    );
+
+    const v = debug.validate;
+    층(
+      '6층',
+      '검증 · 교정',
+      v
+        ? dRow('이탈도 총량', v.deviation) +
+            dRow('교정 전 어긋남', describeMismatch(v.initial_diff)) +
+            dRow('최종 어긋남', describeMismatch(v.diff)) +
+            (v.repair_request
+              ? dRow('교정 model', v.repair_request.model) +
+                dRow('교정 max_tokens', v.repair_request.max_tokens) +
+                dRow('교정 thinking', v.repair_request.thinking ?? '(붙지 않음)') +
+                dPre('교정 프롬프트', v.repair_request.user)
+              : '<p class="empty">교정을 호출하지 않았습니다 (어긋남 없음).</p>') +
+            (v.repair_response
+              ? dRow('교정 stop_reason', v.repair_response.stop_reason ?? '(없음)') +
+                dRow('교정 JSON 파싱', v.repair_response.parsed_ok ? '성공' : '실패') +
+                dPre('교정 원본', v.repair_response.raw_text)
+              : '')
+        : '<p class="empty">분석 결과가 없어 검증까지 가지 못했습니다.</p>',
+    );
+
+    $('debug-body').innerHTML = s.join('');
+    wrap.hidden = false;
+    // 아직 도착 전이면 자리표('…')를 그대로 둔다. 직전 구절의 결과를 채워 넣으면
+    // 화면이 거짓말을 한다 — 이 화면에서 가장 하면 안 되는 일이다.
+    if (lastPos) renderDebugPos(lastPos);
+  }
+
+  function describeMismatch(diff) {
+    if (!diff || diff.length === 0) return '없음';
+    return diff.map((d) => `${d.hanja} 기대 ${d.expected} / 실제 ${d.got}`).join(', ');
+  }
+
+  /**
+   * 2층 자리를 채운다. /api/pos 는 analyze 와 별개로 도착하므로 따로 그린다.
+   * 이 목록이 프롬프트에 들어간다고 오해하면 3단계에서 이미 정정한 전제를 다시
+   * 틀리게 된다. 그래서 화면에도 그 사실을 적어 둔다.
+   */
+  function renderDebugPos(d) {
+    const el = $('debug-pos');
+    if (!el) return;
+    if (!d || !d.ok) {
+      el.innerHTML = '<p class="empty">품사 정보를 받지 못했습니다.</p>';
+      return;
+    }
+    const fw = (d.function_words ?? []).map((w) => w.hanja);
+    const sp = (d.sentence_patterns ?? []).map((x) => x.pattern);
+    el.innerHTML =
+      '<p class="empty">이 목록은 프롬프트에 들어가지 않습니다 — /api/pos 의 화면 표시용 결과입니다.</p>' +
+      dRow('코퍼스 커버리지', `${d.coverage?.known ?? 0} / ${d.coverage?.total ?? 0}`) +
+      dRow('허사', dList(fw)) +
+      dRow('정형 문형', dList(sp)) +
+      dRow('품사 배열 패턴', dList((d.patterns ?? []).map((x) => x.pattern)));
   }
 
   // ── 탭 ──────────────────────────────────────────────────────────────

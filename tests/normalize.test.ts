@@ -27,8 +27,10 @@ import cacheKeySrc from '../src/lib/cache-key.ts?raw';
 import hanjaSrc from '../src/lib/hanja.ts?raw';
 import promptSrc from '../src/lib/prompt.ts?raw';
 import analyzeSrc from '../src/pages/api/analyze.ts?raw';
+import debugSrc from '../src/lib/debug.ts?raw';
 import normalizeTestSrc from './normalize.test.ts?raw';
 import cacheKeyTestSrc from './cache-key.test.ts?raw';
+import debugTestSrc from './debug.test.ts?raw';
 
 const ch = (cp: number) => String.fromCodePoint(cp);
 
@@ -151,15 +153,21 @@ describe('normalize — 소스 표기 규칙', () => {
    * 끼면 3단계에서 SHA-256 으로 고정해 둔 프롬프트가 조용히 달라진다. 그쪽 스냅숏이
    * 깨지기는 하겠지만, 원인이 무엇인지는 알려주지 못한다 — 화면에 보이지 않는
    * 문자이므로 diff 를 봐도 알 수 없다. 여기서 코드포인트로 먼저 잡는다.
+   *
+   * debug.ts 는 목록에서 빠뜨리기 가장 쉬우면서 가장 필요한 파일이다. 이 규칙이
+   * 지키려는 바로 그것 — 보이지 않는 문자의 코드포인트 범위 — 을 정의하는 파일이라,
+   * 여기에 리터럴이 끼면 화면이 잡아야 할 문자를 화면이 못 잡는다.
    */
   it.each([
     ['src/lib/analysis.ts', analysisSrc],
     ['src/lib/cache-key.ts', cacheKeySrc],
+    ['src/lib/debug.ts', debugSrc],
     ['src/lib/hanja.ts', hanjaSrc],
     ['src/lib/prompt.ts', promptSrc],
     ['src/pages/api/analyze.ts', analyzeSrc],
     ['tests/normalize.test.ts', normalizeTestSrc],
     ['tests/cache-key.test.ts', cacheKeyTestSrc],
+    ['tests/debug.test.ts', debugTestSrc],
   ])('%s 에 보이지 않는 문자가 리터럴로 남아 있지 않다', (_path, src) => {
     const 금지 = (cp: number) =>
       cp === 0x0000 ||
