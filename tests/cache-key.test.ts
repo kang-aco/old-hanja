@@ -162,11 +162,16 @@ describe('cacheKey — DB 컬럼과의 계약', () => {
    * 계획서 원안은 키를 `[버전, mode, 원문].join('|')` 로 두자고 했다. 그렇게 하면
    * 원문이 키 컬럼에 그대로 실려 컬럼의 의미와 스키마 주석이 함께 깨진다.
    * 해시를 조인 문자열로 되돌리는 회귀를 이 검사가 잡는다.
+   *
+   * ※ 처음에는 여기에 `not.toContain('學')` 도 있었다. 돌연변이 검사에서 세 줄을
+   *   각각의 it 으로 쪼개 돌려 보니 그 줄만 깨지지 않았다 — PROD_TEXT 에 學 이
+   *   없으니 조인 문자열로 바뀌어도 여전히 포함되지 않는다. 즉 어떤 회귀도
+   *   잡지 못하는 빈 검사였다. M2 에서 배운 것과 같은 계열이라 지웠다.
+   *   남은 두 줄은 M5 에서 실제로 깨지는 것을 확인했다.
    */
   it('원문이 키에 그대로 실리지 않는다', async () => {
     const key = await cacheKey(PROD_TEXT, 'light');
     expect(key).not.toContain(PROD_TEXT);
-    expect(key).not.toContain('學');
     expect(key).not.toContain(ANALYSIS_VERSION);
   });
 });

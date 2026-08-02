@@ -25,6 +25,8 @@ import { normalize } from '../src/lib/analysis';
 import analysisSrc from '../src/lib/analysis.ts?raw';
 import cacheKeySrc from '../src/lib/cache-key.ts?raw';
 import hanjaSrc from '../src/lib/hanja.ts?raw';
+import promptSrc from '../src/lib/prompt.ts?raw';
+import analyzeSrc from '../src/pages/api/analyze.ts?raw';
 import normalizeTestSrc from './normalize.test.ts?raw';
 import cacheKeyTestSrc from './cache-key.test.ts?raw';
 
@@ -144,11 +146,18 @@ describe('normalize — 소스 표기 규칙', () => {
    * 있었고, 실제로 4단계 작업 중에 문자 클래스를 고쳐 적다가 U+200B·U+200D·U+2060·
    * U+2064·U+FEFF 를 리터럴로 써 넣는 일이 벌어졌다. 눈으로는 보이지 않으니
    * 코드 리뷰로도 잡히지 않는다. 코드포인트로 훑는 수밖에 없다.
+   *
+   * prompt.ts 와 api/analyze.ts 도 대상이다. SYSTEM_PROMPT 에 보이지 않는 문자가
+   * 끼면 3단계에서 SHA-256 으로 고정해 둔 프롬프트가 조용히 달라진다. 그쪽 스냅숏이
+   * 깨지기는 하겠지만, 원인이 무엇인지는 알려주지 못한다 — 화면에 보이지 않는
+   * 문자이므로 diff 를 봐도 알 수 없다. 여기서 코드포인트로 먼저 잡는다.
    */
   it.each([
     ['src/lib/analysis.ts', analysisSrc],
     ['src/lib/cache-key.ts', cacheKeySrc],
     ['src/lib/hanja.ts', hanjaSrc],
+    ['src/lib/prompt.ts', promptSrc],
+    ['src/pages/api/analyze.ts', analyzeSrc],
     ['tests/normalize.test.ts', normalizeTestSrc],
     ['tests/cache-key.test.ts', cacheKeyTestSrc],
   ])('%s 에 보이지 않는 문자가 리터럴로 남아 있지 않다', (_path, src) => {
